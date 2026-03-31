@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Training artifacts
+logs/
+models/
+videos/
+*.zip
+
+# ROM files
+*.nes
+*.rom
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

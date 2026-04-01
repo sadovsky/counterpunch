@@ -105,10 +105,9 @@ class PunchOutRewardWrapper(gym.Wrapper):
             + (self.cfg.noop_penalty if is_noop else 0.0)
         )
 
-        # KO bonus: opponent health drops to 0 — also terminate the episode
+        # KO bonus: opponent health drops to 0
         if health_com == 0 and self._prev_health_com > 0:
             shaped_reward += self.cfg.ko_bonus
-            terminated = True
 
         self._prev_health_com       = health_com
         self._prev_health_mac       = health_mac

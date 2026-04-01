@@ -185,6 +185,7 @@ All weights are in `config.py` under `RewardConfig`.
 | `gae_lambda` | 0.95 | GAE smoothing |
 | `clip_range` | 0.1 | PPO clipping |
 | `ent_coef` | 0.01 | Entropy bonus |
+| `max_episode_steps` | 13500 | ~9 min of game time per episode |
 | `frame_skip` | 4 | Frames per action |
 | `sticky_prob` | 0.1 | Stochastic frame skip probability |
 | `frame_stack` | 4 | Stacked frames for motion |

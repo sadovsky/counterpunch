@@ -25,9 +25,9 @@ class RewardConfig:
     knockdown_dealt: float = 5.0
     knockdown_taken: float = -5.0
     punch_landed: float = 0.1
-    star_bonus: float = 0.5
+    star_bonus: float = 1.0
     heart_loss: float = -0.5
-    noop_penalty: float = -0.01
+    noop_penalty: float = -0.005
     score_weight: float = 0.01
 
 

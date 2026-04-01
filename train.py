@@ -30,14 +30,21 @@ class VideoRecordingCallback(BaseCallback):
         self.config = config
         self.total_timesteps = total_timesteps
         self._remaining = dict(MILESTONES)  # fraction -> label
+        self._pending: list[str] = []       # labels queued for next rollout end
 
     def _on_step(self) -> bool:
+        # Only set flags here — recording mid-rollout causes a CUDA deadlock
         progress = self.num_timesteps / self.total_timesteps
-        triggered = [f for f in list(self._remaining) if progress >= f]
-        for fraction in triggered:
-            label = self._remaining.pop(fraction)
-            self._record(label)
+        for fraction in list(self._remaining):
+            if progress >= fraction:
+                self._pending.append(self._remaining.pop(fraction))
         return True
+
+    def _on_rollout_end(self) -> None:
+        # GPU is idle between rollout and update — safe to run inference
+        for label in self._pending:
+            self._record(label)
+        self._pending.clear()
 
     def _record(self, label: str) -> None:
         env = make_env(self.config, render_mode="rgb_array")()

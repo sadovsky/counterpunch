@@ -145,9 +145,14 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             prev_health_mac  = health_mac_ram
             prev_health_com  = health_com_ram
 
-            # Mac KO'd during Glass Joe fight — break and retry
-            if opponent_id == 0 and fight_state == FIGHT_ACTIVE and health_mac_ram == 0:
-                print(f"  Attempt {attempt}: Mac KO'd at step {step}, retrying...")
+            # Mac knocked down (fight_state=0x01) — the knockdown recovery screen
+            # requires rapid A/B mashing to get Mac up, which KnockdownRecovery
+            # doesn't do. Just retry; with deterministic play the model usually
+            # wins cleanly. (Note: opponent knockdowns leave fight_state=0xFF,
+            # so 0x01 unambiguously means Mac is down.)
+            if opponent_id == 0 and fight_state != FIGHT_ACTIVE:
+                print(f"  Attempt {attempt}: Mac knocked down at step {step} "
+                      f"(fight_state=0x{fight_state:02X}), retrying...")
                 break
 
             # Detect the moment Von Kaiser's fight becomes active

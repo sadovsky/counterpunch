@@ -74,7 +74,10 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     print("Playing through Glass Joe to find Match2 start...")
     # Knockdowns temporarily set health_com=0 in RAM; require it to stay
     # at 0 for this many consecutive steps to confirm a real KO.
-    KO_CONFIRM_STEPS = 10
+    # Knockdown counts last up to 10 seconds = ~150 steps at 4-frame skip.
+    # Require health_com==0 for longer than any possible knockdown count
+    # to confirm a real KO (health stays at 0 through the whole transition).
+    KO_CONFIRM_STEPS = 200  # ~13 seconds, safely above any knockdown count
     # After KO confirmed, require new opponent health to be stable at a
     # non-zero value for this many steps before saving.
     STABILITY_REQUIRED = 20

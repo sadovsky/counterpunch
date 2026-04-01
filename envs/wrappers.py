@@ -147,8 +147,9 @@ class KnockdownRecovery(gym.Wrapper):
     PULSE_ON   = 3    # frames to hold START
     PULSE_CYCLE = 15  # total cycle length (on + off)
 
-    _START = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
-    _NOOP  = np.zeros(9, dtype=np.int8)
+    _START    = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
+    _START_A  = np.array([0, 0, 0, 1, 0, 0, 0, 0, 1], dtype=np.int8)  # START+A
+    _NOOP     = np.zeros(9, dtype=np.int8)
 
     def __init__(self, env):
         super().__init__(env)
@@ -163,12 +164,10 @@ class KnockdownRecovery(gym.Wrapper):
         clock_active = int(ram[self.ADDR_CLOCK]) == 1
 
         if not clock_active:
-            # Pulse START every PULSE_CYCLE frames
-            action = (
-                self._START
-                if self._inactive_frames % self.PULSE_CYCLE < self.PULSE_ON
-                else self._NOOP
-            )
+            # Pulse START+A every PULSE_CYCLE frames — some post-fight
+            # screens respond to A, others to START; pressing both covers all
+            phase = self._inactive_frames % self.PULSE_CYCLE
+            action = self._START_A if phase < self.PULSE_ON else self._NOOP
             self._inactive_frames += 1
         else:
             self._inactive_frames = 0

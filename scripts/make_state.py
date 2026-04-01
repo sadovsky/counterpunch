@@ -151,6 +151,16 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             prev_health_mac  = health_mac_ram
             prev_health_com  = health_com_ram
 
+            # Cheat: keep Glass Joe's health at 1 (any punch finishes him)
+            # and clamp Mac's health so he can't be KO'd before we save.
+            # Only active while still fighting Glass Joe (not Von Kaiser).
+            # Mac's health resets to full at the start of each new fight, so
+            # the saved Von Kaiser state will still have mac=96.
+            if not von_kaiser_seen and fight_state == FIGHT_ACTIVE:
+                ram[ADDR_HEALTH_COM] = 1
+                if health_mac_ram < 32:
+                    ram[ADDR_HEALTH_MAC] = FULL_HEALTH
+
             # Detect Von Kaiser fight by fight_id
             if fight_id == VON_KAISER_FIGHT_ID:
                 if not von_kaiser_seen:

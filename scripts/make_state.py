@@ -89,11 +89,16 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
 
             if glass_joe_beaten:
                 ram = env.unwrapped.get_ram()
-                clock = int(ram[ADDR_CLOCK_ACTIVE])
-                if clock == 1 and health_com > 0:
+                clock      = int(ram[ADDR_CLOCK_ACTIVE])
+                health_mac_raw = int(ram[ADDR_HEALTH_MAC])
+                health_com_raw = int(ram[ADDR_HEALTH_COM])
+                # Require Mac at full health + clock running + opponent present —
+                # this only happens at the very start of a fresh fight
+                if clock == 1 and health_mac_raw == FULL_HEALTH and health_com_raw > 0:
                     state = env.unwrapped.em.get_state()
                     env.close()
-                    print(f"  Next fight detected at step {step}")
+                    print(f"  Next fight detected at step {step} "
+                          f"(opponent health={health_com_raw})")
                     return state
 
             if terminated or truncated:

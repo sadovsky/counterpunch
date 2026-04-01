@@ -19,11 +19,16 @@ import numpy as np
 import stable_retro as retro
 
 
-# RAM addresses (see MEMORY_MAP.md)
+# RAM addresses (see MEMORY_MAP.md and DataCrystal RAM map)
+ADDR_OPPONENT     = 1     # 0x0001 — current opponent ID (0=Glass Joe, 1=Von Kaiser, …)
+ADDR_FIGHT_STATE  = 4     # 0x0004 — 0xFF=fight active, 0x01=between rounds
 ADDR_CLOCK_ACTIVE = 768   # 0x0300 — 1 when a fight is live
 ADDR_HEALTH_MAC   = 913   # 0x0391 — player health (max 96)
-ADDR_HEALTH_COM   = 920   # 0x0398 — opponent health (max 96)
+ADDR_HEALTH_COM   = 920   # 0x0398 — opponent health
 FULL_HEALTH       = 96    # 0x60
+
+FIGHT_ACTIVE      = 0xFF
+VON_KAISER_ID     = 1
 
 START = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
 NOOP  = np.zeros(9, dtype=np.int8)
@@ -90,93 +95,69 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     model = PPO.load(model_path)
 
     print("Playing through Glass Joe to find Match2 start...")
-    # Knockdowns temporarily set health_com=0 in RAM; require it to stay
-    # at 0 for this many consecutive steps to confirm a real KO.
-    # Knockdown counts last up to 10 seconds = ~150 steps at 4-frame skip.
-    # Require health_com==0 for longer than any possible knockdown count
-    # to confirm a real KO (health stays at 0 through the whole transition).
-    KO_CONFIRM_STEPS = 200  # ~13 seconds, safely above any knockdown count
-    # After KO confirmed, require new opponent health to be stable at a
-    # non-zero value for this many steps before saving.
-    STABILITY_REQUIRED = 20
+    # Use the opponent ID RAM address (0x0001) to detect the fight transition.
+    # This is far more reliable than health polling:
+    #   - No ambiguity between knockdowns and KOs
+    #   - No dependency on opponent max-health values
+    #   - Opponent ID changes exactly when the new fight loads
+    # Require the Von Kaiser fight to be active (fight_state == 0xFF) with
+    # Mac at full health for STABILITY_REQUIRED consecutive steps before saving,
+    # to ensure we capture the state at the very start of the fight.
+    STABILITY_REQUIRED = 30
 
     max_attempts = 20
     for attempt in range(1, max_attempts + 1):
         obs, info = env.reset()
-        glass_joe_beaten = False
-        zero_count = 0
+        von_kaiser_seen = False
         stable_count = 0
-        last_health_com_raw = -1
 
         print(f"  Attempt {attempt}...")
         for step in range(timeout):
-            # Once KO is confirmed, press NOOP (action index 0) so Mac doesn't
-            # fight Von Kaiser and risk getting KO'd before we can save the state.
-            # Must pass integer 0 (not raw NOOP array) since PunchOutDiscretizer
-            # is the top wrapper and expects discrete action indices.
-            if glass_joe_beaten:
+            ram            = env.unwrapped.get_ram()
+            opponent_id    = int(ram[ADDR_OPPONENT])
+            fight_state    = int(ram[ADDR_FIGHT_STATE])
+            health_mac_ram = int(ram[ADDR_HEALTH_MAC])
+            health_com_ram = int(ram[ADDR_HEALTH_COM])
+
+            # Periodic status so progress is visible
+            if step % 200 == 0:
+                print(f"    step={step} opponent={opponent_id} fight_state=0x{fight_state:02X} "
+                      f"mac={health_mac_ram} com={health_com_ram}")
+
+            # Mac KO'd during Glass Joe fight — break and retry
+            if opponent_id == 0 and fight_state == FIGHT_ACTIVE and health_mac_ram == 0:
+                print(f"  Attempt {attempt}: Mac KO'd at step {step}, retrying...")
+                break
+
+            # Detect the moment Von Kaiser's fight becomes active
+            if opponent_id == VON_KAISER_ID:
+                if not von_kaiser_seen:
+                    print(f"  Attempt {attempt}: Von Kaiser detected at step {step} "
+                          f"(fight_state=0x{fight_state:02X} mac={health_mac_ram} com={health_com_ram})")
+                    von_kaiser_seen = True
+
+                # Wait for fight to be fully active with Mac at full health
+                if fight_state == FIGHT_ACTIVE and health_mac_ram == FULL_HEALTH and health_com_ram > 0:
+                    stable_count += 1
+                    if stable_count >= STABILITY_REQUIRED:
+                        state = env.unwrapped.em.get_state()
+                        env.close()
+                        print(f"  Match2 state saved at step {step} "
+                              f"(Von Kaiser health={health_com_ram}, stable {stable_count} steps)")
+                        return state
+                else:
+                    stable_count = 0
+
+            # Press NOOP once Von Kaiser is detected so Mac doesn't fight him
+            if von_kaiser_seen:
                 action = 0
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)
 
-            ram            = env.unwrapped.get_ram()
-            health_com_ram = int(ram[ADDR_HEALTH_COM])
-            health_mac_ram = int(ram[ADDR_HEALTH_MAC])
-            clock_ram      = int(ram[ADDR_CLOCK_ACTIVE])
-
-            # Without PunchOutRewardWrapper, the game loops forever if Mac is KO'd
-            # (KnockdownRecovery keeps pressing START to continue the fight).
-            # Detect Mac KO via RAM and break the attempt early.
-            if not glass_joe_beaten and health_mac_ram == 0 and clock_ram == 1:
-                print(f"  Attempt {attempt}: Mac KO'd at step {step}, retrying...")
-                break
-
-            # Confirm KO: health_com must stay at 0 for KO_CONFIRM_STEPS
-            # consecutive steps (knockdowns recover; KOs don't)
-            if not glass_joe_beaten:
-                if health_com_ram == 0:
-                    zero_count += 1
-                    if zero_count >= KO_CONFIRM_STEPS:
-                        glass_joe_beaten = True
-                        stable_count = 0
-                        last_health_com_raw = -1
-                        print(f"  Attempt {attempt}: Glass Joe KO confirmed at step {step}")
-                else:
-                    zero_count = 0
-
-            # Print periodic status so progress is visible
-            if step % 200 == 0:
-                print(f"    step={step} clock={clock_ram} mac={health_mac_ram} com={health_com_ram} "
-                      f"zero_count={zero_count} beaten={glass_joe_beaten}")
-
-            # Wait for new opponent: clock active, Mac at full health, opponent
-            # health non-zero and stable. Safe to use > 0 here because
-            # glass_joe_beaten was confirmed via 200 consecutive zero-health steps —
-            # any non-zero health_com now is the next opponent, not a knockdown recovery.
-            if glass_joe_beaten:
-                if clock_ram == 1 and health_mac_ram == FULL_HEALTH and health_com_ram > 0:
-                    if health_com_ram == last_health_com_raw:
-                        stable_count += 1
-                    else:
-                        stable_count = 1
-                        last_health_com_raw = health_com_ram
-
-                    if stable_count >= STABILITY_REQUIRED:
-                        state = env.unwrapped.em.get_state()
-                        env.close()
-                        print(f"  Next fight confirmed at step {step} "
-                              f"(opponent health={health_com_ram}, "
-                              f"stable for {stable_count} steps)")
-                        return state
-                else:
-                    stable_count = 0
-
             if terminated or truncated:
-                if not glass_joe_beaten:
-                    print(f"  Attempt {attempt}: episode ended without KO confirmed, retrying...")
-                else:
-                    print(f"  Attempt {attempt}: episode ended before next fight confirmed, retrying...")
+                label = "Von Kaiser found but" if von_kaiser_seen else "Glass Joe not beaten,"
+                print(f"  Attempt {attempt}: {label} episode ended at step {step}, retrying...")
                 break
 
     env.close()

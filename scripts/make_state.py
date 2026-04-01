@@ -153,13 +153,17 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
 
             # Cheat: keep Glass Joe's health at 1 (any punch finishes him)
             # and clamp Mac's health so he can't be KO'd before we save.
+            # Must write both "next" and "current" health addresses — the game
+            # uses both (next=913/920, current=914/921 per DataCrystal RAM map).
             # Only active while still fighting Glass Joe (not Von Kaiser).
             # Mac's health resets to full at the start of each new fight, so
             # the saved Von Kaiser state will still have mac=96.
             if not von_kaiser_seen and fight_state == FIGHT_ACTIVE:
-                ram[ADDR_HEALTH_COM] = 1
+                ram[ADDR_HEALTH_COM]     = 1   # 920 — opponent next health
+                ram[ADDR_HEALTH_COM + 1] = 1   # 921 — opponent current health
                 if health_mac_ram < 32:
-                    ram[ADDR_HEALTH_MAC] = FULL_HEALTH
+                    ram[ADDR_HEALTH_MAC]     = FULL_HEALTH  # 913 — mac next health
+                    ram[ADDR_HEALTH_MAC + 1] = FULL_HEALTH  # 914 — mac current health
 
             # Detect Von Kaiser fight by fight_id
             if fight_id == VON_KAISER_FIGHT_ID:

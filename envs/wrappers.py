@@ -96,7 +96,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
         shaped_reward = (
             opponent_dmg                    * self.cfg.opponent_damage
             + player_dmg                    * self.cfg.player_damage
-            + min(heart_delta, 0)           * self.cfg.heart_loss
+            + max(-heart_delta, 0)          * self.cfg.heart_loss
             + score_delta                   * self.cfg.score_weight
             + max(star_delta, 0)            * self.cfg.star_bonus
             + max(kd_dealt_delta, 0)        * self.cfg.knockdown_dealt

@@ -70,21 +70,22 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     import gymnasium as gym
     from stable_baselines3 import PPO
     from config import Config
-    from envs.wrappers import KnockdownRecovery, StochasticFrameSkip, PunchOutDiscretizer
+    from envs.wrappers import StochasticFrameSkip, PunchOutDiscretizer
 
     print(f"Loading model from {model_path}...")
     config = Config()
 
     # Build a stripped-down env for state generation:
-    #   - KnockdownRecovery: pulses START+A to advance post-fight screens
+    #   - NO KnockdownRecovery: its START+A pulsing fires whenever clk=0,
+    #     which includes the between-rounds break. START pauses the NES game,
+    #     causing the break screen to freeze indefinitely. We handle all
+    #     transitions manually in the loop below.
     #   - StochasticFrameSkip: with sticky_prob=0 for reliable model play
     #   - PunchOutDiscretizer: so model.predict() actions work correctly
-    #   - NO PunchOutRewardWrapper: removes Mac KO termination, which fires
+    #   - NO PunchOutRewardWrapper: removes Mac KO termination which fires
     #     on false positives during the Glass Joe → Von Kaiser RAM transition
-    #     (health_mac briefly reads 0 while health_com is non-zero)
     # Episodes only end via the large TimeLimit, so the loop controls flow.
     env = retro.make(game=game, state="Match1", render_mode=None)
-    env = KnockdownRecovery(env)
     env = StochasticFrameSkip(env, n_frames=config.env.frame_skip, sticky_prob=0.0)
     env = PunchOutDiscretizer(env)
     if config.env.grayscale:
@@ -176,14 +177,18 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             #     to fill the get-up meter, plus occasional START for cut scenes
             #   - Otherwise: let the model play
             if von_kaiser_seen:
-                action = 0
+                action = 0  # NOOP — don't fight Von Kaiser
             elif fight_state != FIGHT_ACTIVE:
                 if fight_init == 1:
                     # Mac knocked down mid-round — mash A and B to fill get-up meter
                     action = 4 if step % 2 == 0 else 5  # A=4, B=5
                 else:
-                    # Between rounds / cut scene — press START to advance
-                    action = 8  # START (star uppercut slot = START button)
+                    # Between rounds / victory screens / cut scenes.
+                    # The between-rounds break advances automatically (don't press
+                    # START — it pauses the NES). Pulse START slowly (once per
+                    # 60 steps ≈ every 4 game-seconds) to advance any screens
+                    # that do need manual input without triggering the pause menu.
+                    action = 8 if step % 60 == 0 else 0
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)

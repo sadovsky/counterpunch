@@ -88,7 +88,6 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     env = gym.wrappers.TimeLimit(env, max_episode_steps=100_000)
 
     model = PPO.load(model_path)
-    model = PPO.load(model_path)
 
     print("Playing through Glass Joe to find Match2 start...")
     # Knockdowns temporarily set health_com=0 in RAM; require it to stay
@@ -146,11 +145,17 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
                 else:
                     zero_count = 0
 
-            # Wait for new opponent: clock active, both fighters at full health.
-            # Requiring opponent health == FULL_HEALTH (96) prevents false triggers
-            # from Glass Joe recovering after a knockdown (reduced health, stable).
+            # Print periodic status so progress is visible
+            if step % 200 == 0:
+                print(f"    step={step} clock={clock_ram} mac={health_mac_ram} com={health_com_ram} "
+                      f"zero_count={zero_count} beaten={glass_joe_beaten}")
+
+            # Wait for new opponent: clock active, Mac at full health, opponent
+            # health non-zero and stable. Safe to use > 0 here because
+            # glass_joe_beaten was confirmed via 200 consecutive zero-health steps —
+            # any non-zero health_com now is the next opponent, not a knockdown recovery.
             if glass_joe_beaten:
-                if clock_ram == 1 and health_mac_ram == FULL_HEALTH and health_com_ram == FULL_HEALTH:
+                if clock_ram == 1 and health_mac_ram == FULL_HEALTH and health_com_ram > 0:
                     if health_com_ram == last_health_com_raw:
                         stable_count += 1
                     else:
@@ -161,7 +166,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
                         state = env.unwrapped.em.get_state()
                         env.close()
                         print(f"  Next fight confirmed at step {step} "
-                              f"(opponent health={health_com_ram} [full={FULL_HEALTH}], "
+                              f"(opponent health={health_com_ram}, "
                               f"stable for {stable_count} steps)")
                         return state
                 else:

@@ -9,6 +9,7 @@ class EnvConfig:
     state: str = "Match1"
     frame_skip: int = 4
     sticky_prob: float = 0.25
+    eval_sticky_prob: float = 0.0
     grayscale: bool = True
     resize: tuple[int, int] = (84, 84)
     frame_stack: int = 4

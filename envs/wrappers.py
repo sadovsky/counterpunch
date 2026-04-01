@@ -154,7 +154,7 @@ class StochasticFrameSkip(gym.Wrapper):
         return obs, total_reward, terminated, truncated, info
 
 
-def make_env(config, render_mode=None):
+def make_env(config, render_mode=None, eval_env=False):
     """Factory function returning a callable that creates a wrapped Punch-Out env.
 
     Returns a function compatible with stable-baselines3 make_vec_env.
@@ -166,10 +166,11 @@ def make_env(config, render_mode=None):
             state=config.env.state,
             render_mode=render_mode,
         )
+        sticky_prob = config.env.eval_sticky_prob if eval_env else config.env.sticky_prob
         env = StochasticFrameSkip(
             env,
             n_frames=config.env.frame_skip,
-            sticky_prob=config.env.sticky_prob,
+            sticky_prob=sticky_prob,
         )
         env = PunchOutRewardWrapper(env, config.reward)
         env = PunchOutDiscretizer(env)

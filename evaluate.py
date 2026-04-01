@@ -32,7 +32,7 @@ def main():
         config.env.state = args.state
 
     render_mode = "human" if args.render else "rgb_array"
-    env_fn = make_env(config, render_mode=render_mode)
+    env_fn = make_env(config, render_mode=render_mode, eval_env=True)
     env = env_fn()
 
     model = PPO.load(args.model)

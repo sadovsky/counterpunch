@@ -115,7 +115,7 @@ def main():
     )
 
     # Eval env (single subprocess so main process stays emulator-free for video recording)
-    eval_env = VecMonitor(SubprocVecEnv([make_env(config)]))
+    eval_env = VecMonitor(SubprocVecEnv([make_env(config, eval_env=True)]))
 
     # Per-run video config so the callback writes to the right directory
     run_config = Config()

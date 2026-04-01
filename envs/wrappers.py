@@ -89,6 +89,8 @@ class PunchOutRewardWrapper(gym.Wrapper):
         kd_taken_delta   = knockdowns_taken - self._prev_knockdowns_taken
         punch_delta      = punches_landed - self._prev_punches_landed
 
+        is_noop = np.all(action == 0)
+
         shaped_reward = (
             opponent_dmg                    * self.cfg.opponent_damage
             + player_dmg                    * self.cfg.player_damage
@@ -97,6 +99,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
             + max(kd_dealt_delta, 0)        * self.cfg.knockdown_dealt
             + max(kd_taken_delta, 0)        * self.cfg.knockdown_taken
             + max(punch_delta, 0)           * self.cfg.punch_landed
+            + (self.cfg.noop_penalty if is_noop else 0.0)
         )
 
         # KO bonus: opponent health drops to 0

@@ -26,6 +26,7 @@ class RewardConfig:
     punch_landed: float = 0.1
     star_bonus: float = 0.5
     heart_loss: float = 0.0
+    noop_penalty: float = -0.01
     score_weight: float = 0.01
 
 
@@ -38,7 +39,7 @@ class PPOConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_range: float = 0.1
-    ent_coef: float = 0.01
+    ent_coef: float = 0.02
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
 

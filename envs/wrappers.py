@@ -93,6 +93,9 @@ class PunchOutRewardWrapper(gym.Wrapper):
         kd_taken_delta   = knockdowns_taken - self._prev_knockdowns_taken
         punch_delta      = punches_landed - self._prev_punches_landed
 
+        stars_used       = max(-star_delta, 0)   # positive when a star is consumed
+        star_landed      = 1 if (stars_used > 0 and opponent_dmg > 0) else 0
+
         is_noop = np.all(action == 0)
 
         shaped_reward = (
@@ -101,6 +104,8 @@ class PunchOutRewardWrapper(gym.Wrapper):
             + max(-heart_delta, 0)          * self.cfg.heart_loss
             + score_delta                   * self.cfg.score_weight
             + max(star_delta, 0)            * self.cfg.star_bonus
+            + stars_used                    * self.cfg.star_used
+            + star_landed                   * self.cfg.star_hit
             + max(kd_dealt_delta, 0)        * self.cfg.knockdown_dealt
             + max(kd_taken_delta, 0)        * self.cfg.knockdown_taken
             + max(punch_delta, 0)           * self.cfg.punch_landed

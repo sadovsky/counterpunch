@@ -72,10 +72,17 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     model = PPO.load(model_path)
 
     print("Playing through Glass Joe to find Match2 start...")
+    # Require opponent health to hold the same non-zero value for this many
+    # consecutive steps after the KO — transition screens flicker, a real
+    # fight start is stable.
+    STABILITY_REQUIRED = 15
+
     max_attempts = 10
     for attempt in range(1, max_attempts + 1):
         obs, info = env.reset()
         glass_joe_beaten = False
+        stable_count = 0
+        last_health_com_raw = -1
 
         for step in range(timeout):
             action, _ = model.predict(obs, deterministic=True)
@@ -85,25 +92,38 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
 
             if not glass_joe_beaten and health_com == 0:
                 glass_joe_beaten = True
+                stable_count = 0
+                last_health_com_raw = -1
                 print(f"  Attempt {attempt}: Glass Joe KO at step {step}")
 
             if glass_joe_beaten:
                 ram = env.unwrapped.get_ram()
-                clock      = int(ram[ADDR_CLOCK_ACTIVE])
+                clock          = int(ram[ADDR_CLOCK_ACTIVE])
                 health_mac_raw = int(ram[ADDR_HEALTH_MAC])
                 health_com_raw = int(ram[ADDR_HEALTH_COM])
-                # Require Mac at full health + clock running + opponent present —
-                # this only happens at the very start of a fresh fight
+
                 if clock == 1 and health_mac_raw == FULL_HEALTH and health_com_raw > 0:
-                    state = env.unwrapped.em.get_state()
-                    env.close()
-                    print(f"  Next fight detected at step {step} "
-                          f"(opponent health={health_com_raw})")
-                    return state
+                    if health_com_raw == last_health_com_raw:
+                        stable_count += 1
+                    else:
+                        stable_count = 1
+                        last_health_com_raw = health_com_raw
+
+                    if stable_count >= STABILITY_REQUIRED:
+                        state = env.unwrapped.em.get_state()
+                        env.close()
+                        print(f"  Next fight confirmed at step {step} "
+                              f"(opponent health={health_com_raw}, "
+                              f"stable for {stable_count} steps)")
+                        return state
+                else:
+                    stable_count = 0
 
             if terminated or truncated:
                 if not glass_joe_beaten:
-                    print(f"  Attempt {attempt}: episode ended without beating Glass Joe, retrying...")
+                    print(f"  Attempt {attempt}: episode ended without KO, retrying...")
+                else:
+                    print(f"  Attempt {attempt}: episode ended before next fight confirmed, retrying...")
                 break
 
     env.close()

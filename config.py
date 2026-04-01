@@ -28,7 +28,7 @@ class RewardConfig:
     star_bonus: float = 1.0
     heart_loss: float = -0.5
     noop_penalty: float = -0.005
-    score_weight: float = 0.01
+    score_weight: float = 0.0
 
 
 @dataclass

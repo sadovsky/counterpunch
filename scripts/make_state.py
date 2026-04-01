@@ -110,8 +110,12 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
         obs, info = env.reset()
         von_kaiser_seen = False
         stable_count = 0
+        prev_opponent_id  = -1
+        prev_fight_state  = -1
+        prev_health_mac   = -1
+        prev_health_com   = -1
 
-        print(f"  Attempt {attempt}...")
+        print(f"  Attempt {attempt}/{max_attempts}")
         for step in range(timeout):
             ram            = env.unwrapped.get_ram()
             opponent_id    = int(ram[ADDR_OPPONENT])
@@ -119,10 +123,27 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             health_mac_ram = int(ram[ADDR_HEALTH_MAC])
             health_com_ram = int(ram[ADDR_HEALTH_COM])
 
-            # Periodic status so progress is visible
-            if step % 200 == 0:
-                print(f"    step={step} opponent={opponent_id} fight_state=0x{fight_state:02X} "
-                      f"mac={health_mac_ram} com={health_com_ram}")
+            # Always print on state changes
+            state_changed = (
+                opponent_id  != prev_opponent_id  or
+                fight_state  != prev_fight_state  or
+                health_mac_ram != prev_health_mac or
+                health_com_ram != prev_health_com
+            )
+            # Also print a heartbeat every 50 steps
+            if state_changed or step % 50 == 0:
+                tag = ""
+                if stable_count > 0:
+                    tag = f" [stable {stable_count}/{STABILITY_REQUIRED}]"
+                elif von_kaiser_seen:
+                    tag = " [waiting for fight active]"
+                print(f"    step={step:4d}  opponent={opponent_id}  "
+                      f"fight=0x{fight_state:02X}  mac={health_mac_ram:3d}  "
+                      f"com={health_com_ram:3d}{tag}", flush=True)
+            prev_opponent_id = opponent_id
+            prev_fight_state = fight_state
+            prev_health_mac  = health_mac_ram
+            prev_health_com  = health_com_ram
 
             # Mac KO'd during Glass Joe fight — break and retry
             if opponent_id == 0 and fight_state == FIGHT_ACTIVE and health_mac_ram == 0:

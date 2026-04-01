@@ -111,15 +111,37 @@ Key metrics to watch:
 
 ## Evaluation
 
+Each training run saves models under a timestamped directory. Find yours with:
+
 ```bash
-# Run 3 episodes and record MP4s to videos/
-python evaluate.py --model models/best/best_model.zip --record
+ls models/
+# e.g. 20260331_223410/
+```
 
-# Run 5 episodes
-python evaluate.py --model models/best/best_model.zip --episodes 5 --record
+### Record to MP4
 
-# Evaluate on a specific game state
-python evaluate.py --model models/best/best_model.zip --state Match1 --record
+```bash
+# Record 3 episodes to videos/
+python evaluate.py --model models/20260331_223410/best/best_model.zip --record
+
+# Record 5 episodes
+python evaluate.py --model models/20260331_223410/best/best_model.zip --episodes 5 --record
+
+# Use the final model instead of the best
+python evaluate.py --model models/20260331_223410/punchout_ppo_final.zip --record
+```
+
+### Live Render
+
+Renders the game in a window in real time. Requires a display — on a desktop this works out of the box. On a headless server or WSL, use a virtual framebuffer:
+
+```bash
+# Desktop
+python evaluate.py --model models/20260331_223410/best/best_model.zip --render
+
+# WSL / headless server (requires: apt install xvfb)
+xvfb-run -s "-screen 0 768x672x24" python evaluate.py \
+    --model models/20260331_223410/best/best_model.zip --render
 ```
 
 ## Action Space

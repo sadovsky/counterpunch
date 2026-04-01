@@ -102,9 +102,10 @@ class PunchOutRewardWrapper(gym.Wrapper):
             + (self.cfg.noop_penalty if is_noop else 0.0)
         )
 
-        # KO bonus: opponent health drops to 0
+        # KO bonus: opponent health drops to 0 — also terminate the episode
         if health_com == 0 and self._prev_health_com > 0:
             shaped_reward += self.cfg.ko_bonus
+            terminated = True
 
         self._prev_health_com       = health_com
         self._prev_health_mac       = health_mac
@@ -115,6 +116,36 @@ class PunchOutRewardWrapper(gym.Wrapper):
         self._prev_punches_landed   = punches_landed
 
         return obs, shaped_reward, terminated, truncated, info
+
+
+class KnockdownRecovery(gym.Wrapper):
+    """Presses START whenever the fight clock is inactive.
+
+    Detects knockdowns and between-round pauses via the clock-active flag
+    (RAM 768). When the clock stops, Mac is either down (referee count) or
+    the round just ended. Holding START gets him back up and advances past
+    the inter-round screen as fast as possible.
+    """
+
+    ADDR_CLOCK = 768  # 0x0300 — 1 when fight clock is running
+
+    _START = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
+
+    def __init__(self, env):
+        super().__init__(env)
+
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        ram = self.env.unwrapped.get_ram()
+        clock_active = int(ram[self.ADDR_CLOCK]) == 1
+
+        # Clock inactive → knockdown count or between rounds; inject START
+        if not clock_active:
+            action = self._START
+
+        return self.env.step(action)
 
 
 class StochasticFrameSkip(gym.Wrapper):
@@ -166,6 +197,7 @@ def make_env(config, render_mode=None, eval_env=False):
             state=config.env.state,
             render_mode=render_mode,
         )
+        env = KnockdownRecovery(env)
         sticky_prob = config.env.eval_sticky_prob if eval_env else config.env.sticky_prob
         env = StochasticFrameSkip(
             env,

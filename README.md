@@ -168,6 +168,7 @@ xvfb-run -s "-screen 0 768x672x24" python3 evaluate.py \
 | Player knocked down | −5.0 |
 | Punch landed | +0.1 |
 | Star earned | +0.5 |
+| Heart lost | −0.5 per point |
 | KO (opponent health → 0) | +10.0 |
 
 All weights are in `config.py` under `RewardConfig`.
@@ -185,7 +186,7 @@ All weights are in `config.py` under `RewardConfig`.
 | `clip_range` | 0.1 | PPO clipping |
 | `ent_coef` | 0.01 | Entropy bonus |
 | `frame_skip` | 4 | Frames per action |
-| `sticky_prob` | 0.25 | Stochastic frame skip probability |
+| `sticky_prob` | 0.1 | Stochastic frame skip probability |
 | `frame_stack` | 4 | Stacked frames for motion |
 | `n_envs` | 8 | Parallel environments |
 

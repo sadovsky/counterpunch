@@ -75,6 +75,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
 
         health_com       = info.get("health_com", self._prev_health_com)
         health_mac       = info.get("health_mac", self._prev_health_mac)
+        heart            = info.get("heart", self._prev_heart)
         score            = info.get("score", self._prev_score)
         stars            = info.get("stars", self._prev_stars)
         knockdowns_dealt = info.get("knockdowns_dealt", self._prev_knockdowns_dealt)
@@ -83,6 +84,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
 
         opponent_dmg     = self._prev_health_com - health_com
         player_dmg       = self._prev_health_mac - health_mac
+        heart_delta      = heart - self._prev_heart
         score_delta      = score - self._prev_score
         star_delta       = stars - self._prev_stars
         kd_dealt_delta   = knockdowns_dealt - self._prev_knockdowns_dealt
@@ -94,6 +96,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
         shaped_reward = (
             opponent_dmg                    * self.cfg.opponent_damage
             + player_dmg                    * self.cfg.player_damage
+            + min(heart_delta, 0)           * self.cfg.heart_loss
             + score_delta                   * self.cfg.score_weight
             + max(star_delta, 0)            * self.cfg.star_bonus
             + max(kd_dealt_delta, 0)        * self.cfg.knockdown_dealt
@@ -109,6 +112,7 @@ class PunchOutRewardWrapper(gym.Wrapper):
 
         self._prev_health_com       = health_com
         self._prev_health_mac       = health_mac
+        self._prev_heart            = heart
         self._prev_score            = score
         self._prev_stars            = stars
         self._prev_knockdowns_dealt = knockdowns_dealt

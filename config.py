@@ -8,7 +8,7 @@ class EnvConfig:
     game: str = "PunchOut-Nes-v0"
     state: str = "Match1"
     frame_skip: int = 4
-    sticky_prob: float = 0.25
+    sticky_prob: float = 0.1
     eval_sticky_prob: float = 0.0
     grayscale: bool = True
     resize: tuple[int, int] = (84, 84)
@@ -26,7 +26,7 @@ class RewardConfig:
     knockdown_taken: float = -5.0
     punch_landed: float = 0.1
     star_bonus: float = 0.5
-    heart_loss: float = 0.0
+    heart_loss: float = -0.5
     noop_penalty: float = -0.01
     score_weight: float = 0.01
 

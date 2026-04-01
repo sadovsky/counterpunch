@@ -61,14 +61,33 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     """Load Match1, beat Glass Joe with the trained model, save at the next fight."""
     # Import here so make_state.py has no mandatory dependency on SB3 / project code
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import gymnasium as gym
     from stable_baselines3 import PPO
     from config import Config
-    from envs.wrappers import make_env
+    from envs.wrappers import KnockdownRecovery, StochasticFrameSkip, PunchOutDiscretizer
 
     print(f"Loading model from {model_path}...")
     config = Config()
-    config.env.state = "Match1"
-    env = make_env(config)()
+
+    # Build a stripped-down env for state generation:
+    #   - KnockdownRecovery: pulses START+A to advance post-fight screens
+    #   - StochasticFrameSkip: with sticky_prob=0 for reliable model play
+    #   - PunchOutDiscretizer: so model.predict() actions work correctly
+    #   - NO PunchOutRewardWrapper: removes Mac KO termination, which fires
+    #     on false positives during the Glass Joe → Von Kaiser RAM transition
+    #     (health_mac briefly reads 0 while health_com is non-zero)
+    # Episodes only end via the large TimeLimit, so the loop controls flow.
+    env = retro.make(game=game, state="Match1", render_mode=None)
+    env = KnockdownRecovery(env)
+    env = StochasticFrameSkip(env, n_frames=config.env.frame_skip, sticky_prob=0.0)
+    env = PunchOutDiscretizer(env)
+    if config.env.grayscale:
+        env = gym.wrappers.GrayscaleObservation(env, keep_dim=False)
+    env = gym.wrappers.ResizeObservation(env, shape=config.env.resize)
+    env = gym.wrappers.FrameStackObservation(env, stack_size=config.env.frame_stack)
+    env = gym.wrappers.TimeLimit(env, max_episode_steps=100_000)
+
+    model = PPO.load(model_path)
     model = PPO.load(model_path)
 
     print("Playing through Glass Joe to find Match2 start...")
@@ -91,10 +110,12 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
         last_health_com_raw = -1
 
         for step in range(timeout):
-            # Once KO is confirmed, press NOOP so Mac doesn't fight Von Kaiser
-            # and risk getting KO'd before we can save the state
+            # Once KO is confirmed, press NOOP (action index 0) so Mac doesn't
+            # fight Von Kaiser and risk getting KO'd before we can save the state.
+            # Must pass integer 0 (not raw NOOP array) since PunchOutDiscretizer
+            # is the top wrapper and expects discrete action indices.
             if glass_joe_beaten:
-                action = NOOP
+                action = 0
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)
@@ -117,10 +138,11 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
                 else:
                     zero_count = 0
 
-            # Wait for new opponent: clock active, Mac full health, opponent
-            # health stable at a new non-zero value
+            # Wait for new opponent: clock active, both fighters at full health.
+            # Requiring opponent health == FULL_HEALTH (96) prevents false triggers
+            # from Glass Joe recovering after a knockdown (reduced health, stable).
             if glass_joe_beaten:
-                if clock_ram == 1 and health_mac_ram == FULL_HEALTH and health_com_ram > 0:
+                if clock_ram == 1 and health_mac_ram == FULL_HEALTH and health_com_ram == FULL_HEALTH:
                     if health_com_ram == last_health_com_raw:
                         stable_count += 1
                     else:
@@ -131,7 +153,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
                         state = env.unwrapped.em.get_state()
                         env.close()
                         print(f"  Next fight confirmed at step {step} "
-                              f"(opponent health={health_com_ram}, "
+                              f"(opponent health={health_com_ram} [full={FULL_HEALTH}], "
                               f"stable for {stable_count} steps)")
                         return state
                 else:

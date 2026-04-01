@@ -190,7 +190,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
                     # that do need manual input without triggering the pause menu.
                     action = 8 if step % 60 == 0 else 0
             else:
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(obs, deterministic=False)
             obs, _, terminated, truncated, info = env.step(action)
 
             if terminated or truncated:

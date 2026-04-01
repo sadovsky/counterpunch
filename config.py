@@ -12,7 +12,7 @@ class EnvConfig:
     grayscale: bool = True
     resize: tuple[int, int] = (84, 84)
     frame_stack: int = 4
-    n_envs: int = 8
+    n_envs: int = 16
 
 
 @dataclass
@@ -31,9 +31,9 @@ class RewardConfig:
 @dataclass
 class PPOConfig:
     learning_rate: float = 2.5e-4
-    n_steps: int = 128
-    batch_size: int = 256
-    n_epochs: int = 4
+    n_steps: int = 512
+    batch_size: int = 512
+    n_epochs: int = 10
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_range: float = 0.1

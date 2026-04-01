@@ -16,15 +16,14 @@ BUTTON_NAMES = ["B", "NULL", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "
 ACTION_TABLE = [
     #  B  NL SEL STA UP  DN  LT  RT  A
     [0, 0, 0, 0, 0, 0, 0, 0, 0],  # 0: NOOP
-    [1, 0, 0, 0, 0, 0, 0, 0, 0],  # 1: Left jab (B)
-    [0, 0, 0, 0, 0, 0, 0, 0, 1],  # 2: Right jab (A)
-    [1, 0, 0, 0, 0, 1, 0, 0, 0],  # 3: Left body blow (down + B)
-    [0, 0, 0, 0, 0, 1, 0, 0, 1],  # 4: Right body blow (down + A)
-    [0, 0, 0, 0, 0, 0, 1, 0, 0],  # 5: Dodge left
-    [0, 0, 0, 0, 0, 0, 0, 1, 0],  # 6: Dodge right
-    [0, 0, 0, 0, 1, 0, 0, 0, 0],  # 7: Block (up)
-    [0, 0, 0, 1, 0, 0, 0, 0, 0],  # 8: Star punch (start)
-    [0, 0, 0, 0, 0, 1, 0, 0, 0],  # 9: Duck (down)
+    [0, 0, 0, 0, 0, 0, 1, 0, 0],  # 1: Dodge left
+    [0, 0, 0, 0, 0, 0, 0, 1, 0],  # 2: Dodge right
+    [0, 0, 0, 0, 0, 1, 0, 0, 0],  # 3: Block/duck (down)
+    [0, 0, 0, 0, 0, 0, 0, 0, 1],  # 4: Right body blow (A)
+    [1, 0, 0, 0, 0, 0, 0, 0, 0],  # 5: Left body blow (B)
+    [0, 0, 0, 0, 1, 0, 0, 0, 1],  # 6: Right head punch (up + A)
+    [1, 0, 0, 0, 1, 0, 0, 0, 0],  # 7: Left head punch (up + B)
+    [0, 0, 0, 1, 0, 0, 0, 0, 0],  # 8: Star uppercut (start)
 ]
 
 
@@ -54,6 +53,10 @@ class PunchOutRewardWrapper(gym.Wrapper):
         self._prev_health_mac = 0
         self._prev_heart = 0
         self._prev_score = 0
+        self._prev_stars = 0
+        self._prev_knockdowns_dealt = 0
+        self._prev_knockdowns_taken = 0
+        self._prev_punches_landed = 0
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
@@ -61,40 +64,52 @@ class PunchOutRewardWrapper(gym.Wrapper):
         self._prev_health_mac = info.get("health_mac", 0)
         self._prev_heart = info.get("heart", 0)
         self._prev_score = info.get("score", 0)
+        self._prev_stars = info.get("stars", 0)
+        self._prev_knockdowns_dealt = info.get("knockdowns_dealt", 0)
+        self._prev_knockdowns_taken = info.get("knockdowns_taken", 0)
+        self._prev_punches_landed = info.get("punches_landed", 0)
         return obs, info
 
     def step(self, action):
         obs, _reward, terminated, truncated, info = self.env.step(action)
 
-        health_com = info.get("health_com", self._prev_health_com)
-        health_mac = info.get("health_mac", self._prev_health_mac)
-        heart = info.get("heart", self._prev_heart)
-        score = info.get("score", self._prev_score)
+        health_com       = info.get("health_com", self._prev_health_com)
+        health_mac       = info.get("health_mac", self._prev_health_mac)
+        score            = info.get("score", self._prev_score)
+        stars            = info.get("stars", self._prev_stars)
+        knockdowns_dealt = info.get("knockdowns_dealt", self._prev_knockdowns_dealt)
+        knockdowns_taken = info.get("knockdowns_taken", self._prev_knockdowns_taken)
+        punches_landed   = info.get("punches_landed", self._prev_punches_landed)
 
-        # Opponent took damage (health_com decreased) → positive reward
-        opponent_dmg = (self._prev_health_com - health_com)
-        # Player took damage (health_mac decreased) → negative reward
-        player_dmg = (self._prev_health_mac - health_mac)
-        # Score increased
-        score_delta = score - self._prev_score
-        # Hearts lost
-        heart_delta = heart - self._prev_heart
+        opponent_dmg     = self._prev_health_com - health_com
+        player_dmg       = self._prev_health_mac - health_mac
+        score_delta      = score - self._prev_score
+        star_delta       = stars - self._prev_stars
+        kd_dealt_delta   = knockdowns_dealt - self._prev_knockdowns_dealt
+        kd_taken_delta   = knockdowns_taken - self._prev_knockdowns_taken
+        punch_delta      = punches_landed - self._prev_punches_landed
 
         shaped_reward = (
-            opponent_dmg * self.cfg.opponent_damage
-            + player_dmg * self.cfg.player_damage
-            + score_delta * self.cfg.score_weight
-            + min(heart_delta, 0) * self.cfg.heart_loss  # only penalize loss
+            opponent_dmg                    * self.cfg.opponent_damage
+            + player_dmg                    * self.cfg.player_damage
+            + score_delta                   * self.cfg.score_weight
+            + max(star_delta, 0)            * self.cfg.star_bonus
+            + max(kd_dealt_delta, 0)        * self.cfg.knockdown_dealt
+            + max(kd_taken_delta, 0)        * self.cfg.knockdown_taken
+            + max(punch_delta, 0)           * self.cfg.punch_landed
         )
 
         # KO bonus: opponent health drops to 0
         if health_com == 0 and self._prev_health_com > 0:
             shaped_reward += self.cfg.ko_bonus
 
-        self._prev_health_com = health_com
-        self._prev_health_mac = health_mac
-        self._prev_heart = heart
-        self._prev_score = score
+        self._prev_health_com       = health_com
+        self._prev_health_mac       = health_mac
+        self._prev_score            = score
+        self._prev_stars            = stars
+        self._prev_knockdowns_dealt = knockdowns_dealt
+        self._prev_knockdowns_taken = knockdowns_taken
+        self._prev_punches_landed   = punches_landed
 
         return obs, shaped_reward, terminated, truncated, info
 
@@ -156,7 +171,7 @@ def make_env(config, render_mode=None):
         env = PunchOutRewardWrapper(env, config.reward)
         env = PunchOutDiscretizer(env)
         if config.env.grayscale:
-            env = gym.wrappers.GrayscaleObservation(env, keep_dim=True)
+            env = gym.wrappers.GrayscaleObservation(env, keep_dim=False)
         env = gym.wrappers.ResizeObservation(env, shape=config.env.resize)
         env = gym.wrappers.FrameStackObservation(env, stack_size=config.env.frame_stack)
         return env

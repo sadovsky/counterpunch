@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class EnvConfig:
-    game: str = "PunchOut-Nes"
+    game: str = "PunchOut-Nes-v0"
     state: str = "Match1"
     frame_skip: int = 4
     sticky_prob: float = 0.25
@@ -20,8 +20,11 @@ class RewardConfig:
     opponent_damage: float = 1.0
     player_damage: float = -1.0
     ko_bonus: float = 10.0
+    knockdown_dealt: float = 5.0
+    knockdown_taken: float = -5.0
+    punch_landed: float = 0.1
     star_bonus: float = 0.5
-    heart_loss: float = -0.5
+    heart_loss: float = 0.0
     score_weight: float = 0.01
 
 

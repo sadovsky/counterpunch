@@ -3,12 +3,63 @@
 import argparse
 import os
 
+import imageio
+import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
 
 from config import Config
 from envs.wrappers import make_env
+
+
+MILESTONES = {
+    0.01: "early",
+    0.25: "quarter",
+    0.50: "mid",
+    0.75: "three-quarter",
+    1.00: "final",
+}
+
+
+class VideoRecordingCallback(BaseCallback):
+    """Records one episode at each training milestone and saves as MP4."""
+
+    def __init__(self, config: Config, total_timesteps: int):
+        super().__init__()
+        self.config = config
+        self.total_timesteps = total_timesteps
+        self._remaining = dict(MILESTONES)  # fraction -> label
+
+    def _on_step(self) -> bool:
+        progress = self.num_timesteps / self.total_timesteps
+        triggered = [f for f in list(self._remaining) if progress >= f]
+        for fraction in triggered:
+            label = self._remaining.pop(fraction)
+            self._record(label)
+        return True
+
+    def _record(self, label: str) -> None:
+        env = make_env(self.config, render_mode="rgb_array")()
+        obs, _ = env.reset()
+        frames, done = [], False
+        while not done:
+            action, _ = self.model.predict(obs, deterministic=True)
+            obs, _, terminated, truncated, _ = env.step(action)
+            frame = env.render()
+            if frame is not None:
+                frames.append(frame)
+            done = terminated or truncated
+        env.close()
+
+        if frames:
+            os.makedirs(self.config.train.video_dir, exist_ok=True)
+            path = os.path.join(
+                self.config.train.video_dir,
+                f"{label}_{self.num_timesteps}.mp4",
+            )
+            imageio.mimwrite(path, frames, fps=60)
+            print(f"  [video] {label} ({self.num_timesteps:,} steps) → {path}")
 
 
 def linear_schedule(initial_value: float):
@@ -51,8 +102,8 @@ def main():
         vec_cls([make_env(config) for _ in range(config.env.n_envs)])
     )
 
-    # Eval env (single, for deterministic evaluation)
-    eval_env = VecMonitor(DummyVecEnv([make_env(config)]))
+    # Eval env (single subprocess so main process stays emulator-free for video recording)
+    eval_env = VecMonitor(SubprocVecEnv([make_env(config)]))
 
     # Callbacks
     eval_callback = EvalCallback(
@@ -68,6 +119,7 @@ def main():
         save_path=os.path.join(config.train.model_dir, "checkpoints"),
         name_prefix="punchout_ppo",
     )
+    video_callback = VideoRecordingCallback(config, total_timesteps)
 
     # Model
     if args.resume:
@@ -98,7 +150,7 @@ def main():
 
     model.learn(
         total_timesteps=total_timesteps,
-        callback=[eval_callback, checkpoint_callback],
+        callback=[eval_callback, checkpoint_callback, video_callback],
         tb_log_name="punchout_ppo",
     )
 

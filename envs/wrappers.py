@@ -128,31 +128,43 @@ class PunchOutRewardWrapper(gym.Wrapper):
 
 
 class KnockdownRecovery(gym.Wrapper):
-    """Presses START whenever the fight clock is inactive.
+    """Pulses START when the fight clock is inactive.
 
-    Detects knockdowns and between-round pauses via the clock-active flag
-    (RAM 768). When the clock stops, Mac is either down (referee count) or
-    the round just ended. Holding START gets him back up and advances past
-    the inter-round screen as fast as possible.
+    Detects knockdowns and between-round/post-KO pauses via the clock-active
+    flag (RAM 768). Pulses START (3 frames on, 12 frames off) rather than
+    holding it continuously — the NES only registers one press event per
+    button-hold, so pulsing allows multiple transition screens to advance.
     """
 
     ADDR_CLOCK = 768  # 0x0300 — 1 when fight clock is running
+    PULSE_ON   = 3    # frames to hold START
+    PULSE_CYCLE = 15  # total cycle length (on + off)
 
     _START = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
+    _NOOP  = np.zeros(9, dtype=np.int8)
 
     def __init__(self, env):
         super().__init__(env)
+        self._inactive_frames = 0
 
     def reset(self, **kwargs):
+        self._inactive_frames = 0
         return self.env.reset(**kwargs)
 
     def step(self, action):
         ram = self.env.unwrapped.get_ram()
         clock_active = int(ram[self.ADDR_CLOCK]) == 1
 
-        # Clock inactive → knockdown count or between rounds; inject START
         if not clock_active:
-            action = self._START
+            # Pulse START every PULSE_CYCLE frames
+            action = (
+                self._START
+                if self._inactive_frames % self.PULSE_CYCLE < self.PULSE_ON
+                else self._NOOP
+            )
+            self._inactive_frames += 1
+        else:
+            self._inactive_frames = 0
 
         return self.env.step(action)
 

@@ -111,8 +111,10 @@ class PunchOutRewardWrapper(gym.Wrapper):
         if health_com == 0 and self._prev_health_com > 0:
             shaped_reward += self.cfg.ko_bonus
 
-        # Terminate when Mac is KO'd
-        if health_mac == 0 and self._prev_health_mac > 0:
+        # Terminate when Mac is KO'd during an active fight.
+        # Guard health_com > 0 to avoid false triggers during post-KO
+        # transitions where RAM health values are temporarily unreliable.
+        if health_mac == 0 and self._prev_health_mac > 0 and health_com > 0:
             terminated = True
 
         self._prev_health_com       = health_com

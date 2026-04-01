@@ -178,9 +178,8 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             if von_kaiser_seen:
                 action = 0
             elif fight_state != FIGHT_ACTIVE:
-                # Cycle: LEFT, LEFT, RIGHT, RIGHT, START every 5 steps
-                cycle = step % 5
-                action = 1 if cycle < 2 else (2 if cycle < 4 else 8)
+                # Mash A and B alternately to fill Mac's get-up meter
+                action = 4 if step % 2 == 0 else 5  # A=4, B=5
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)

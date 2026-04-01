@@ -223,7 +223,8 @@ def make_env(config, render_mode=None, eval_env=False):
             env = gym.wrappers.GrayscaleObservation(env, keep_dim=False)
         env = gym.wrappers.ResizeObservation(env, shape=config.env.resize)
         env = gym.wrappers.FrameStackObservation(env, stack_size=config.env.frame_stack)
-        env = gym.wrappers.TimeLimit(env, max_episode_steps=config.env.max_episode_steps)
+        max_steps = config.env.eval_max_episode_steps if eval_env else config.env.max_episode_steps
+        env = gym.wrappers.TimeLimit(env, max_episode_steps=max_steps)
         return env
 
     return _init

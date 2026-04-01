@@ -16,7 +16,8 @@ class EnvConfig:
     resize: tuple[int, int] = (84, 84)
     frame_stack: int = 4
     n_envs: int = 8
-    max_episode_steps: int = 13500  # ~9 min at 60fps / frame_skip=4
+    max_episode_steps: int = 13500      # ~9 min at 60fps / frame_skip=4
+    eval_max_episode_steps: int = 4500  # ~3 min — keeps eval from blocking training
 
 
 @dataclass

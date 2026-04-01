@@ -95,22 +95,27 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     model = PPO.load(model_path)
 
     print("Playing through Glass Joe to find Match2 start...")
-    # Use the opponent ID RAM address (0x0001) to detect the fight transition.
-    # This is far more reliable than health polling:
-    #   - No ambiguity between knockdowns and KOs
-    #   - No dependency on opponent max-health values
-    #   - Opponent ID changes exactly when the new fight loads
-    # Require the Von Kaiser fight to be active (fight_state == 0xFF) with
-    # Mac at full health for STABILITY_REQUIRED consecutive steps before saving,
-    # to ensure we capture the state at the very start of the fight.
+    # Detection approach: watch for the new-fight reset signal.
+    #
+    # When the model KOs Glass Joe, health_com drops to 0 (knockdown) and stays
+    # there through the TKO animation. Once the next fight loads, BOTH fighters
+    # reset to FULL_HEALTH simultaneously (mac=96, com=96).
+    #
+    # We use a simple state machine:
+    #   1. Wait for health_com == 0 (Glass Joe knocked down/KO'd)
+    #   2. After that, wait for BOTH fighters at FULL_HEALTH for STABILITY_REQUIRED
+    #      consecutive steps — that's the new fight fully loaded
+    #
+    # This avoids relying on opponent_id (which doesn't update reliably) and
+    # avoids the old 200-step consecutive-zero threshold.
     STABILITY_REQUIRED = 30
 
     max_attempts = 20
     for attempt in range(1, max_attempts + 1):
         obs, info = env.reset()
-        von_kaiser_seen = False
-        stable_count = 0
-        prev_opponent_id  = -1
+        knockdown_seen = False   # health_com has hit 0 at least once
+        new_fight_seen = False   # both fighters reset to full health after knockdown
+        stable_count   = 0
         prev_fight_state  = -1
         prev_health_mac   = -1
         prev_health_com   = -1
@@ -123,67 +128,72 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             health_mac_ram = int(ram[ADDR_HEALTH_MAC])
             health_com_ram = int(ram[ADDR_HEALTH_COM])
 
-            # Always print on state changes
+            # Print on any state change, plus a heartbeat every 50 steps
             state_changed = (
-                opponent_id  != prev_opponent_id  or
-                fight_state  != prev_fight_state  or
-                health_mac_ram != prev_health_mac or
+                fight_state    != prev_fight_state or
+                health_mac_ram != prev_health_mac  or
                 health_com_ram != prev_health_com
             )
-            # Also print a heartbeat every 50 steps
             if state_changed or step % 50 == 0:
                 tag = ""
                 if stable_count > 0:
                     tag = f" [stable {stable_count}/{STABILITY_REQUIRED}]"
-                elif von_kaiser_seen:
-                    tag = " [waiting for fight active]"
-                print(f"    step={step:4d}  opponent={opponent_id}  "
+                elif new_fight_seen:
+                    tag = " [waiting for fight_state=0xFF]"
+                elif knockdown_seen:
+                    tag = " [waiting for full-health reset]"
+                print(f"    step={step:4d}  opp={opponent_id}  "
                       f"fight=0x{fight_state:02X}  mac={health_mac_ram:3d}  "
                       f"com={health_com_ram:3d}{tag}", flush=True)
-            prev_opponent_id = opponent_id
             prev_fight_state = fight_state
             prev_health_mac  = health_mac_ram
             prev_health_com  = health_com_ram
 
-            # Mac knocked down (fight_state=0x01) — the knockdown recovery screen
-            # requires rapid A/B mashing to get Mac up, which KnockdownRecovery
-            # doesn't do. Just retry; with deterministic play the model usually
-            # wins cleanly. (Note: opponent knockdowns leave fight_state=0xFF,
-            # so 0x01 unambiguously means Mac is down.)
-            if opponent_id == 0 and fight_state != FIGHT_ACTIVE:
-                print(f"  Attempt {attempt}: Mac knocked down at step {step} "
-                      f"(fight_state=0x{fight_state:02X}), retrying...")
+            # fight_state != 0xFF means Mac is down (opponent knockdowns
+            # leave fight_state=0xFF, so this unambiguously means Mac is down).
+            # Retry rather than trying to mash Mac back up.
+            if not knockdown_seen and fight_state != FIGHT_ACTIVE:
+                print(f"  Attempt {attempt}: Mac knocked down at step {step}, retrying...")
                 break
 
-            # Detect the moment Von Kaiser's fight becomes active
-            if opponent_id == VON_KAISER_ID:
-                if not von_kaiser_seen:
-                    print(f"  Attempt {attempt}: Von Kaiser detected at step {step} "
-                          f"(fight_state=0x{fight_state:02X} mac={health_mac_ram} com={health_com_ram})")
-                    von_kaiser_seen = True
+            # Stage 1: watch for Glass Joe going down (health_com → 0)
+            if health_com_ram == 0:
+                knockdown_seen = True
 
-                # Wait for fight to be fully active with Mac at full health
+            # Stage 2: after knockdown, watch for both fighters resetting to
+            # FULL_HEALTH simultaneously — that's the new fight loading
+            if knockdown_seen and not new_fight_seen:
+                if health_mac_ram == FULL_HEALTH and health_com_ram == FULL_HEALTH:
+                    print(f"  Attempt {attempt}: new fight detected at step {step} "
+                          f"(opp={opponent_id}, fight=0x{fight_state:02X})")
+                    new_fight_seen = True
+
+            # Stage 3: wait for fight to be fully active, then save
+            if new_fight_seen:
                 if fight_state == FIGHT_ACTIVE and health_mac_ram == FULL_HEALTH and health_com_ram > 0:
                     stable_count += 1
                     if stable_count >= STABILITY_REQUIRED:
                         state = env.unwrapped.em.get_state()
                         env.close()
                         print(f"  Match2 state saved at step {step} "
-                              f"(Von Kaiser health={health_com_ram}, stable {stable_count} steps)")
+                              f"(opponent health={health_com_ram}, "
+                              f"stable {stable_count} steps)")
                         return state
                 else:
                     stable_count = 0
 
-            # Press NOOP once Von Kaiser is detected so Mac doesn't fight him
-            if von_kaiser_seen:
+            # Press NOOP once new fight is detected so Mac doesn't fight Von Kaiser
+            if new_fight_seen:
                 action = 0
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)
 
             if terminated or truncated:
-                label = "Von Kaiser found but" if von_kaiser_seen else "Glass Joe not beaten,"
-                print(f"  Attempt {attempt}: {label} episode ended at step {step}, retrying...")
+                stage = "new fight found but" if new_fight_seen else (
+                    "Glass Joe down, new fight not found," if knockdown_seen
+                    else "Glass Joe not beaten,")
+                print(f"  Attempt {attempt}: {stage} episode ended at step {step}, retrying...")
                 break
 
     env.close()

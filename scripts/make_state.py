@@ -178,8 +178,12 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             if von_kaiser_seen:
                 action = 0
             elif fight_state != FIGHT_ACTIVE:
-                # Mash A and B alternately to fill Mac's get-up meter
-                action = 4 if step % 2 == 0 else 5  # A=4, B=5
+                if fight_init == 1:
+                    # Mac knocked down mid-round — mash A and B to fill get-up meter
+                    action = 4 if step % 2 == 0 else 5  # A=4, B=5
+                else:
+                    # Between rounds / cut scene — press START to advance
+                    action = 8  # START (star uppercut slot = START button)
             else:
                 action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)

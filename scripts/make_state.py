@@ -107,7 +107,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     # This lets the fight run through multiple rounds if needed.
     STABILITY_REQUIRED = 30
 
-    max_attempts = 20
+    max_attempts = 50
     for attempt in range(1, max_attempts + 1):
         obs, info = env.reset()
         von_kaiser_seen = False

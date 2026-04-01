@@ -8,6 +8,7 @@ import imageio
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
+from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
 
 from config import Config
@@ -70,6 +71,54 @@ class VideoRecordingCallback(BaseCallback):
             print(f"  [video] {label} ({self.num_timesteps:,} steps) → {path}")
 
 
+class MultiStateEvalCallback(BaseCallback):
+    """Evaluates the policy on multiple states and logs per-state metrics.
+
+    The primary state drives best-model saving. Generalization states are
+    logged separately so you can verify the policy hasn't overfit.
+    """
+
+    def __init__(
+        self,
+        eval_envs: dict,          # {state_name: VecEnv}
+        primary_state: str,
+        best_model_save_path: str,
+        eval_freq: int,
+        n_eval_episodes: int,
+    ):
+        super().__init__()
+        self.eval_envs = eval_envs
+        self.primary_state = primary_state
+        self.best_model_save_path = best_model_save_path
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self._best_mean_reward = -np.inf
+        self._next_eval = eval_freq
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps < self._next_eval:
+            return True
+        self._next_eval += self.eval_freq
+
+        for state_name, eval_env in self.eval_envs.items():
+            mean_reward, _ = evaluate_policy(
+                self.model,
+                eval_env,
+                n_eval_episodes=self.n_eval_episodes,
+                deterministic=True,
+            )
+            self.logger.record(f"eval/{state_name}/mean_reward", mean_reward)
+            print(f"  [eval] {state_name}: mean_reward={mean_reward:.2f}")
+
+            if state_name == self.primary_state and mean_reward > self._best_mean_reward:
+                self._best_mean_reward = mean_reward
+                os.makedirs(self.best_model_save_path, exist_ok=True)
+                self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+                print(f"  [eval] New best model ({mean_reward:.2f}) saved.")
+
+        return True
+
+
 def linear_schedule(initial_value: float):
     """Linear learning rate schedule from initial_value to 0."""
 
@@ -122,8 +171,14 @@ def main():
         vec_cls([make_env(config) for _ in range(config.env.n_envs)])
     )
 
-    # Eval env (single subprocess so main process stays emulator-free for video recording)
-    eval_env = VecMonitor(SubprocVecEnv([make_env(config, eval_env=True)]))
+    # Eval envs — one per state (primary + generalization states)
+    all_eval_states = [config.env.state] + list(config.env.generalization_states)
+    eval_envs = {}
+    for state in all_eval_states:
+        eval_config = Config()
+        eval_config.__dict__.update(config.__dict__)
+        eval_config.env.state = state
+        eval_envs[state] = VecMonitor(SubprocVecEnv([make_env(eval_config, eval_env=True)]))
 
     # Per-run video config so the callback writes to the right directory
     run_config = Config()
@@ -131,13 +186,12 @@ def main():
     run_config.train.video_dir = run_video_dir
 
     # Callbacks
-    eval_callback = EvalCallback(
-        eval_env,
+    eval_callback = MultiStateEvalCallback(
+        eval_envs=eval_envs,
+        primary_state=config.env.state,
         best_model_save_path=os.path.join(run_model_dir, "best"),
-        log_path=config.train.log_dir,
-        eval_freq=max(config.train.eval_freq // config.env.n_envs, 1),
+        eval_freq=config.train.eval_freq,
         n_eval_episodes=config.train.n_eval_episodes,
-        deterministic=True,
     )
     checkpoint_callback = CheckpointCallback(
         save_freq=max(config.train.save_freq // config.env.n_envs, 1),
@@ -187,7 +241,8 @@ def main():
     print(f"Final model saved to {final_path}")
 
     train_envs.close()
-    eval_env.close()
+    for env in eval_envs.values():
+        env.close()
 
 
 if __name__ == "__main__":

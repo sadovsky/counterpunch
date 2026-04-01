@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 @dataclass
 class EnvConfig:
     game: str = "PunchOut-Nes-v0"
-    state: str = "Match1"
+    state: str = "Match2"
+    generalization_states: list = field(default_factory=lambda: ["Match1"])
+    generalization_prob: float = 0.2
     frame_skip: int = 4
     sticky_prob: float = 0.1
     eval_sticky_prob: float = 0.0

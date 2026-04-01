@@ -1,5 +1,7 @@
 """Custom environment wrappers for Punch-Out!! NES."""
 
+import random
+
 import gymnasium as gym
 import numpy as np
 import stable_retro as retro
@@ -195,9 +197,17 @@ def make_env(config, render_mode=None, eval_env=False):
     """
 
     def _init():
+        state = config.env.state
+        if (
+            not eval_env
+            and config.env.generalization_states
+            and random.random() < config.env.generalization_prob
+        ):
+            state = random.choice(config.env.generalization_states)
+
         env = retro.make(
             game=config.env.game,
-            state=config.env.state,
+            state=state,
             render_mode=render_mode,
         )
         env = KnockdownRecovery(env)

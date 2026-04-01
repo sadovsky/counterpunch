@@ -109,6 +109,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
         stable_count = 0
         last_health_com_raw = -1
 
+        print(f"  Attempt {attempt}...")
         for step in range(timeout):
             # Once KO is confirmed, press NOOP (action index 0) so Mac doesn't
             # fight Von Kaiser and risk getting KO'd before we can save the state.
@@ -124,6 +125,13 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
             health_com_ram = int(ram[ADDR_HEALTH_COM])
             health_mac_ram = int(ram[ADDR_HEALTH_MAC])
             clock_ram      = int(ram[ADDR_CLOCK_ACTIVE])
+
+            # Without PunchOutRewardWrapper, the game loops forever if Mac is KO'd
+            # (KnockdownRecovery keeps pressing START to continue the fight).
+            # Detect Mac KO via RAM and break the attempt early.
+            if not glass_joe_beaten and health_mac_ram == 0 and clock_ram == 1:
+                print(f"  Attempt {attempt}: Mac KO'd at step {step}, retrying...")
+                break
 
             # Confirm KO: health_com must stay at 0 for KO_CONFIRM_STEPS
             # consecutive steps (knockdowns recover; KOs don't)

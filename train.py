@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from datetime import datetime
 
 import imageio
 import numpy as np
@@ -100,8 +101,12 @@ def main():
 
     total_timesteps = args.timesteps or config.train.total_timesteps
 
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_model_dir = os.path.join(config.train.model_dir, run_id)
+    run_video_dir = os.path.join(config.train.video_dir, run_id)
+
     os.makedirs(config.train.log_dir, exist_ok=True)
-    os.makedirs(config.train.model_dir, exist_ok=True)
+    os.makedirs(run_model_dir, exist_ok=True)
 
     # Training envs
     vec_cls = DummyVecEnv if args.dummy_vec else SubprocVecEnv
@@ -112,10 +117,15 @@ def main():
     # Eval env (single subprocess so main process stays emulator-free for video recording)
     eval_env = VecMonitor(SubprocVecEnv([make_env(config)]))
 
+    # Per-run video config so the callback writes to the right directory
+    run_config = Config()
+    run_config.__dict__.update(config.__dict__)
+    run_config.train.video_dir = run_video_dir
+
     # Callbacks
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=os.path.join(config.train.model_dir, "best"),
+        best_model_save_path=os.path.join(run_model_dir, "best"),
         log_path=config.train.log_dir,
         eval_freq=max(config.train.eval_freq // config.env.n_envs, 1),
         n_eval_episodes=config.train.n_eval_episodes,
@@ -123,10 +133,10 @@ def main():
     )
     checkpoint_callback = CheckpointCallback(
         save_freq=max(config.train.save_freq // config.env.n_envs, 1),
-        save_path=os.path.join(config.train.model_dir, "checkpoints"),
+        save_path=os.path.join(run_model_dir, "checkpoints"),
         name_prefix="punchout_ppo",
     )
-    video_callback = VideoRecordingCallback(config, total_timesteps)
+    video_callback = VideoRecordingCallback(run_config, total_timesteps)
 
     # Model
     if args.resume:
@@ -150,6 +160,7 @@ def main():
             verbose=1,
         )
 
+    print(f"Run ID: {run_id}")
     print(f"Training for {total_timesteps:,} timesteps with {config.env.n_envs} envs")
     print(f"Game: {config.env.game}, State: {config.env.state}")
     print(f"Action space: {train_envs.action_space}")
@@ -161,7 +172,7 @@ def main():
         tb_log_name="punchout_ppo",
     )
 
-    final_path = os.path.join(config.train.model_dir, "punchout_ppo_final")
+    final_path = os.path.join(run_model_dir, "punchout_ppo_final")
     model.save(final_path)
     print(f"Final model saved to {final_path}")
 

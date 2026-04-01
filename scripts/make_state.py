@@ -82,7 +82,7 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
     # non-zero value for this many steps before saving.
     STABILITY_REQUIRED = 20
 
-    max_attempts = 10
+    max_attempts = 20
     for attempt in range(1, max_attempts + 1):
         obs, info = env.reset()
         glass_joe_beaten = False
@@ -91,7 +91,12 @@ def find_match2(game: str, model_path: str, timeout: int) -> bytes:
         last_health_com_raw = -1
 
         for step in range(timeout):
-            action, _ = model.predict(obs, deterministic=True)
+            # Once KO is confirmed, press NOOP so Mac doesn't fight Von Kaiser
+            # and risk getting KO'd before we can save the state
+            if glass_joe_beaten:
+                action = NOOP
+            else:
+                action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)
 
             ram            = env.unwrapped.get_ram()

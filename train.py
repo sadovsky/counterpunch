@@ -151,7 +151,7 @@ def main():
         print(f"Resuming from {args.resume}")
         model = PPO.load(args.resume, env=train_envs, tensorboard_log=config.train.log_dir)
         model.learning_rate = linear_schedule(config.ppo.learning_rate)
-        model.clip_range = config.ppo.clip_range
+        model.clip_range = lambda _: config.ppo.clip_range
     else:
         model = PPO(
             "CnnPolicy",

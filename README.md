@@ -30,10 +30,10 @@ Then register your ROM with stable-retro. The importer matches by SHA1 hash — 
 
 ```bash
 # Try the importer first
-python -m stable_retro.import roms/
+python3 -m stable_retro.import roms/
 
 # If "Imported 0 games", copy manually
-RETRO_DATA=$(python -c "import stable_retro, os; print(os.path.join(os.path.dirname(stable_retro.__file__), 'data/stable/PunchOut-Nes-v0'))")
+RETRO_DATA=$(python3 -c "import stable_retro, os; print(os.path.join(os.path.dirname(stable_retro.__file__), 'data/stable/PunchOut-Nes-v0'))")
 cp roms/punchout.nes $RETRO_DATA/rom.nes
 sha1sum roms/punchout.nes | awk '{print $1}' > $RETRO_DATA/rom.sha
 ```
@@ -41,7 +41,7 @@ sha1sum roms/punchout.nes | awk '{print $1}' > $RETRO_DATA/rom.sha
 Then generate a fight save state for your ROM:
 
 ```bash
-python scripts/make_state.py
+python3 scripts/make_state.py
 ```
 
 > See [MEMORY_MAP.md](MEMORY_MAP.md) for a full writeup on ROM identification, RAM address verification, and state file generation.
@@ -67,16 +67,16 @@ counterpunch/
 
 ```bash
 # Default run (10M timesteps, 8 parallel envs)
-python train.py
+python3 train.py
 
 # Shorter run to test the setup
-python train.py --timesteps 100000
+python3 train.py --timesteps 100000
 
 # Resume from a checkpoint
-python train.py --resume models/checkpoints/punchout_ppo_1000000_steps.zip
+python3 train.py --resume models/checkpoints/punchout_ppo_1000000_steps.zip
 
 # Override number of envs
-python train.py --n-envs 4
+python3 train.py --n-envs 4
 ```
 
 Checkpoints are saved to `models/checkpoints/` every 100k steps. The best model by eval reward is saved to `models/best/`.
@@ -122,13 +122,13 @@ ls models/
 
 ```bash
 # Record 3 episodes to videos/
-python evaluate.py --model models/20260331_223410/best/best_model.zip --record
+python3 evaluate.py --model models/20260331_223410/best/best_model.zip --record
 
 # Record 5 episodes
-python evaluate.py --model models/20260331_223410/best/best_model.zip --episodes 5 --record
+python3 evaluate.py --model models/20260331_223410/best/best_model.zip --episodes 5 --record
 
 # Use the final model instead of the best
-python evaluate.py --model models/20260331_223410/punchout_ppo_final.zip --record
+python3 evaluate.py --model models/20260331_223410/punchout_ppo_final.zip --record
 ```
 
 ### Live Render
@@ -137,10 +137,10 @@ Renders the game in a window in real time. Requires a display — on a desktop t
 
 ```bash
 # Desktop
-python evaluate.py --model models/20260331_223410/best/best_model.zip --render
+python3 evaluate.py --model models/20260331_223410/best/best_model.zip --render
 
 # WSL / headless server (requires: apt install xvfb)
-xvfb-run -s "-screen 0 768x672x24" python evaluate.py \
+xvfb-run -s "-screen 0 768x672x24" python3 evaluate.py \
     --model models/20260331_223410/best/best_model.zip --render
 ```
 

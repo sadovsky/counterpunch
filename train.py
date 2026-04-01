@@ -89,6 +89,10 @@ def main():
                         help="Path to model checkpoint to resume from")
     parser.add_argument("--n-envs", type=int, default=None,
                         help="Number of parallel environments")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Initial learning rate (overrides config); use a lower value when fine-tuning")
+    parser.add_argument("--clip-range", type=float, default=None,
+                        help="PPO clip range (overrides config); smaller values (e.g. 0.05) for fine-tuning")
     parser.add_argument("--dummy-vec", action="store_true",
                         help="Use DummyVecEnv instead of SubprocVecEnv")
     args = parser.parse_args()
@@ -98,6 +102,10 @@ def main():
         config.env.state = args.state
     if args.n_envs:
         config.env.n_envs = args.n_envs
+    if args.lr:
+        config.ppo.learning_rate = args.lr
+    if args.clip_range:
+        config.ppo.clip_range = args.clip_range
 
     total_timesteps = args.timesteps or config.train.total_timesteps
 
@@ -142,6 +150,8 @@ def main():
     if args.resume:
         print(f"Resuming from {args.resume}")
         model = PPO.load(args.resume, env=train_envs, tensorboard_log=config.train.log_dir)
+        model.learning_rate = linear_schedule(config.ppo.learning_rate)
+        model.clip_range = config.ppo.clip_range
     else:
         model = PPO(
             "CnnPolicy",

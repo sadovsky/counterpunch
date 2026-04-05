@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PUNCH-OUT!! ROM MAP</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;600;700&display=swap');
+
+  :root {
+    --bg-dark: #0a0a12;
+    --bg-panel: #111120;
+    --bg-card: #181830;
+    --bg-hex: #0d0d1a;
+    --green: #39ff14;
+    --green-dim: #1a7a0a;
+    --cyan: #00e5ff;
+    --magenta: #ff00ff;
+    --yellow: #ffe600;
+    --orange: #ff8c00;
+    --red: #ff2244;
+    --white: #e0e0e0;
+    --gray: #555570;
+    --border: #2a2a44;
+    --highlight: rgba(57,255,20,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-dark);
+    color: var(--white);
+    font-family: 'JetBrains Mono', monospace;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* CRT Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.15) 0px,
+      rgba(0,0,0,0.15) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 9999;
+  }
+
+  .header {
+    text-align: center;
+    padding: 32px 20px 16px;
+    position: relative;
+  }
+
+  .header h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(18px, 4vw, 36px);
+    color: var(--green);
+    text-shadow: 0 0 20px rgba(57,255,20,0.5), 0 0 60px rgba(57,255,20,0.2);
+    letter-spacing: 4px;
+    animation: flicker 4s infinite;
+  }
+
+  .header .subtitle {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(8px, 1.5vw, 12px);
+    color: var(--cyan);
+    margin-top: 10px;
+    letter-spacing: 2px;
+    opacity: 0.8;
+  }
+
+  .header .rom-info {
+    font-size: 11px;
+    color: var(--gray);
+    margin-top: 8px;
+  }
+
+  @keyframes flicker {
+    0%, 95%, 100% { opacity: 1; }
+    96% { opacity: 0.85; }
+    97% { opacity: 1; }
+    98% { opacity: 0.9; }
+  }
+
+  /* Tab navigation */
+  .tab-bar {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 20px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .tab-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(7px, 1.2vw, 10px);
+    padding: 10px 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--gray);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .tab-btn:hover {
+    color: var(--green);
+    border-color: var(--green-dim);
+  }
+
+  .tab-btn.active {
+    color: var(--green);
+    border-color: var(--green);
+    background: var(--bg-card);
+    box-shadow: 0 0 10px rgba(57,255,20,0.15);
+  }
+
+  .tab-panel { display: none; padding: 0 20px 40px; max-width: 1200px; margin: 0 auto; }
+  .tab-panel.active { display: block; }
+
+  /* ===== MEMORY MAP VISUAL ===== */
+  .mem-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+  }
+
+  .mem-region {
+    display: grid;
+    grid-template-columns: 100px 1fr 200px;
+    align-items: stretch;
+    min-height: 40px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+
+  .mem-region:hover {
+    border-color: var(--green-dim);
+    background: var(--highlight);
+  }
+
+  .mem-region.selected {
+    border-color: var(--green);
+    background: rgba(57,255,20,0.05);
+  }
+
+  .mem-addr {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    color: var(--cyan);
+    font-size: 11px;
+    background: rgba(0,0,0,0.3);
+  }
+
+  .mem-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 8px 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    font-size: 11px;
+    overflow: hidden;
+  }
+
+  .mem-bar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: var(--fill, 100%);
+    opacity: 0.18;
+    z-index: 0;
+  }
+
+  .mem-bar span { position: relative; z-index: 1; }
+
+  .mem-size {
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    color: var(--gray);
+    font-size: 10px;
+    background: rgba(0,0,0,0.2);
+  }
+
+  /* Color coding for regions */
+  .c-ram .mem-bar { color: var(--green); }
+  .c-ram .mem-bar::before { background: var(--green); }
+  .c-ppu .mem-bar { color: var(--cyan); }
+  .c-ppu .mem-bar::before { background: var(--cyan); }
+  .c-apu .mem-bar { color: var(--magenta); }
+  .c-apu .mem-bar::before { background: var(--magenta); }
+  .c-exp .mem-bar { color: var(--yellow); }
+  .c-exp .mem-bar::before { background: var(--yellow); }
+  .c-sram .mem-bar { color: var(--orange); }
+  .c-sram .mem-bar::before { background: var(--orange); }
+  .c-prg .mem-bar { color: var(--red); }
+  .c-prg .mem-bar::before { background: var(--red); }
+
+  .detail-box {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.8;
+    min-height: 80px;
+  }
+
+  .detail-box h3 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--green);
+    margin-bottom: 10px;
+  }
+
+  .detail-box .key { color: var(--cyan); }
+  .detail-box .val { color: var(--white); }
+
+  /* ===== FIGHTERS TAB ===== */
+  .fighter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+
+  .fighter-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .fighter-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--fighter-color, var(--green));
+  }
+
+  .fighter-card:hover {
+    border-color: var(--fighter-color, var(--green));
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+
+  .fighter-card.expanded {
+    grid-column: 1 / -1;
+    border-color: var(--fighter-color, var(--green));
+  }
+
+  .fighter-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    color: var(--fighter-color, var(--green));
+    margin-bottom: 6px;
+  }
+
+  .fighter-circuit {
+    font-size: 9px;
+    color: var(--gray);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+
+  .fighter-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .fighter-stat .label { color: var(--gray); }
+  .fighter-stat .value { color: var(--cyan); font-weight: 600; }
+
+  .fighter-detail {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: none;
+  }
+
+  .fighter-card.expanded .fighter-detail { display: block; }
+
+  .hex-inline {
+    display: inline-block;
+    background: var(--bg-hex);
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* ===== ROM STRUCTURE TAB ===== */
+  .rom-structure {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rom-block {
+    display: grid;
+    grid-template-columns: 140px 1fr 120px;
+    min-height: 38px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+
+  .rom-block:hover {
+    border-color: var(--green-dim);
+    background: var(--highlight);
+  }
+
+  .rom-offset {
+    font-weight: 700;
+    color: var(--yellow);
+    padding: 8px 10px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    background: rgba(0,0,0,0.3);
+  }
+
+  .rom-label {
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rom-label::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: var(--fill, 100%);
+    opacity: 0.12;
+    z-index: 0;
+  }
+
+  .rom-label span { position: relative; z-index: 1; }
+
+  .rom-bytes {
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    color: var(--gray);
+    font-size: 10px;
+    background: rgba(0,0,0,0.2);
+  }
+
+  /* ROM colors */
+  .rc-header .rom-label { color: var(--magenta); }
+  .rc-header .rom-label::before { background: var(--magenta); }
+  .rc-opponent .rom-label { color: var(--red); }
+  .rc-opponent .rom-label::before { background: var(--red); }
+  .rc-sound .rom-label { color: var(--cyan); }
+  .rc-sound .rom-label::before { background: var(--cyan); }
+  .rc-password .rom-label { color: var(--yellow); }
+  .rc-password .rom-label::before { background: var(--yellow); }
+  .rc-music .rom-label { color: var(--magenta); }
+  .rc-music .rom-label::before { background: var(--magenta); }
+  .rc-profile .rom-label { color: var(--orange); }
+  .rc-profile .rom-label::before { background: var(--orange); }
+  .rc-palette .rom-label { color: #aa55ff; }
+  .rc-palette .rom-label::before { background: #aa55ff; }
+  .rc-table .rom-label { color: var(--green); }
+  .rc-table .rom-label::before { background: var(--green); }
+  .rc-gfx .rom-label { color: #ff5599; }
+  .rc-gfx .rom-label::before { background: #ff5599; }
+
+  /* ===== RAM TAB ===== */
+  .ram-page-selector {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .ram-page-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--gray);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .ram-page-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+  .ram-page-btn.active { color: var(--cyan); border-color: var(--cyan); background: var(--bg-card); }
+
+  .ram-grid {
+    display: grid;
+    grid-template-columns: 60px repeat(16, 1fr);
+    gap: 1px;
+    font-size: 10px;
+    background: var(--bg-hex);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .ram-header-cell {
+    background: var(--bg-card);
+    padding: 6px 2px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--yellow);
+    font-size: 9px;
+  }
+
+  .ram-row-label {
+    background: var(--bg-card);
+    padding: 6px 4px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--cyan);
+    font-size: 9px;
+  }
+
+  .ram-cell {
+    background: var(--bg-dark);
+    padding: 6px 2px;
+    text-align: center;
+    color: var(--gray);
+    cursor: pointer;
+    transition: all 0.1s;
+    font-size: 9px;
+  }
+
+  .ram-cell:hover {
+    background: var(--highlight);
+    color: var(--green);
+  }
+
+  .ram-cell.mapped {
+    color: var(--green);
+    background: rgba(57,255,20,0.06);
+  }
+
+  .ram-cell.mapped:hover {
+    background: rgba(57,255,20,0.15);
+  }
+
+  .ram-tooltip {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.6;
+    min-height: 60px;
+  }
+
+  .ram-tooltip .addr { color: var(--cyan); font-weight: 700; }
+  .ram-tooltip .desc { color: var(--white); }
+
+  /* ===== NES ARCHITECTURE TAB ===== */
+  .arch-section {
+    margin-bottom: 24px;
+  }
+
+  .arch-section h3 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--green);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .arch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .arch-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 14px;
+    transition: all 0.2s;
+  }
+
+  .arch-item:hover { border-color: var(--green-dim); }
+
+  .arch-item .label {
+    font-size: 9px;
+    color: var(--gray);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  .arch-item .value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cyan);
+  }
+
+  .arch-item .note {
+    font-size: 10px;
+    color: var(--gray);
+    margin-top: 4px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--gray);
+  }
+
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 9px;
+    color: var(--gray);
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 1px;
+  }
+
+  @media (max-width: 700px) {
+    .mem-region { grid-template-columns: 80px 1fr; }
+    .mem-size { display: none; }
+    .rom-block { grid-template-columns: 100px 1fr; }
+    .rom-bytes { display: none; }
+    .ram-grid { font-size: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PUNCH-OUT!!</h1>
+  <div class="subtitle">NES ROM &amp; RAM MAP</div>
+  <div class="rom-info">Mike Tyson's Punch-Out!! &bull; Mapper 9 (MMC2) &bull; 128KB PRG + 128KB CHR &bull; 1987 Nintendo</div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="cpu-map">CPU Memory</button>
+  <button class="tab-btn" data-tab="rom-map">ROM Layout</button>
+  <button class="tab-btn" data-tab="fighters">Fighters</button>
+  <button class="tab-btn" data-tab="ram-viewer">RAM Viewer</button>
+  <button class="tab-btn" data-tab="cartridge">Cartridge</button>
+</div>
+
+<!-- ============ CPU MEMORY MAP ============ -->
+<div class="tab-panel active" id="cpu-map">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--green)"></div>RAM</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--cyan)"></div>PPU</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--magenta)"></div>APU/IO</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--yellow)"></div>Expansion</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange)"></div>SRAM</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--red)"></div>PRG-ROM</div>
+  </div>
+
+  <div class="mem-layout" id="memLayout"></div>
+  <div class="detail-box" id="memDetail">
+    <h3>SELECT A REGION</h3>
+    Click any memory region above to see details about how Punch-Out!! uses it.
+  </div>
+</div>
+
+<!-- ============ ROM LAYOUT ============ -->
+<div class="tab-panel" id="rom-map">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--magenta)"></div>Header/Sound</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--red)"></div>Opponents</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--yellow)"></div>Passwords</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange)"></div>Profiles</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--green)"></div>Tables</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ff5599"></div>Graphics</div>
+  </div>
+  <div class="rom-structure" id="romStructure"></div>
+  <div class="detail-box" id="romDetail">
+    <h3>ROM FILE STRUCTURE</h3>
+    Total ROM size: 256KB (128KB PRG + 128KB CHR). Click any block above for details.
+  </div>
+</div>
+
+<!-- ============ FIGHTERS ============ -->
+<div class="tab-panel" id="fighters">
+  <div class="fighter-grid" id="fighterGrid"></div>
+</div>
+
+<!-- ============ RAM VIEWER ============ -->
+<div class="tab-panel" id="ram-viewer">
+  <div class="ram-page-selector" id="ramPageSelector"></div>
+  <div class="ram-grid" id="ramGrid"></div>
+  <div class="ram-tooltip" id="ramTooltip">
+    <span class="addr">$0000</span> &mdash; <span class="desc">Click a cell above to see its function in Punch-Out!!</span>
+  </div>
+</div>
+
+<!-- ============ CARTRIDGE ============ -->
+<div class="tab-panel" id="cartridge">
+  <div class="arch-section">
+    <h3>CARTRIDGE SPECS</h3>
+    <div class="arch-grid" id="cartSpecs"></div>
+  </div>
+  <div class="arch-section">
+    <h3>MAPPER 9 (MMC2)</h3>
+    <div class="arch-grid" id="mapperInfo"></div>
+  </div>
+  <div class="arch-section">
+    <h3>NES INTERRUPT VECTORS</h3>
+    <div class="arch-grid" id="vectorInfo"></div>
+  </div>
+</div>
+
+<div class="footer">
+  DATA SOURCED FROM DATACRYSTAL &bull; TASVIDEOS &bull; NESDEV
+</div>
+
+<script>
+// ===== TAB SWITCHING =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ===== CPU MEMORY MAP =====
+const cpuRegions = [
+  { addr: '$0000-$00FF', name: 'Zero Page', size: '256 B', cls: 'c-ram', fill: '100%',
+    detail: `<b>Zero Page (256 bytes)</b><br><br>Fast-access RAM for critical game state. In Punch-Out!!:<br><br><span class="key">$0000</span> <span class="val">Fight init flag (1=in fight)</span><br><span class="key">$0001</span> <span class="val">Opponent ID (0-99)</span><br><span class="key">$0002</span> <span class="val">Opp Type (0=Glass Joe, 1=K.Hippo, 2=Von Kaiser...)</span><br><span class="key">$0005</span> <span class="val">Opponent knocked down flag</span><br><span class="key">$0018</span> <span class="val">RNG — updates once per frame</span><br><span class="key">$0019</span> <span class="val">Button state — current input</span><br><span class="key">$0039</span> <span class="val">Opponent action timer (next action at 0)</span><br><span class="key">$003A</span> <span class="val">Opponent next action ID</span><br><span class="key">$004C</span> <span class="val">Von Kaiser star uppercut weakness flag</span><br><span class="key">$00CB</span> <span class="val">Soda Popinski insta-knockdown flag</span>` },
+  { addr: '$0100-$01FF', name: 'Stack', size: '256 B', cls: 'c-ram', fill: '100%',
+    detail: `<b>Stack (256 bytes)</b><br><br>6502 CPU stack. Used for subroutine calls, interrupt handling, and temporary storage. Grows downward from $01FF. The game's fight logic uses heavy stack manipulation for opponent AI state machines.` },
+  { addr: '$0200-$02FF', name: 'OAM / Sprite Data', size: '256 B', cls: 'c-ram', fill: '100%',
+    detail: `<b>Sprite OAM Data (256 bytes)</b><br><br>Object Attribute Memory for all 64 hardware sprites. Each sprite uses 4 bytes:<br><br><span class="key">Byte 0</span> <span class="val">Y position</span><br><span class="key">Byte 1</span> <span class="val">Tile index</span><br><span class="key">Byte 2</span> <span class="val">Attributes (palette, flip, priority)</span><br><span class="key">Byte 3</span> <span class="val">X position</span><br><br>Punch-Out!! uses almost all 64 sprites for the large fighter characters, Mac's body, and UI elements like stars and hearts.` },
+  { addr: '$0300-$03FF', name: 'Game State / Clock / Stats', size: '256 B', cls: 'c-ram', fill: '100%',
+    detail: `<b>Game State (256 bytes)</b><br><br>Core gameplay variables:<br><br><span class="key">$0300</span> <span class="val">Clock active flag</span><br><span class="key">$0301</span> <span class="val">Clock stop flag (Clock Stopping glitch!)</span><br><span class="key">$0302</span> <span class="val">Clock — minutes</span><br><span class="key">$0304-05</span> <span class="val">Clock — tenths &amp; seconds</span><br><span class="key">$0323-24</span> <span class="val">Hearts (tens &amp; ones)</span><br><span class="key">$0342</span> <span class="val">Star punches count</span><br><span class="key">$0391-93</span> <span class="val">Mac's Health (mirrored 3x)</span><br><span class="key">$0398-9A</span> <span class="val">Opponent's Health (mirrored 3x)</span>` },
+  { addr: '$0400-$07FF', name: 'General Purpose RAM', size: '1 KB', cls: 'c-ram', fill: '100%',
+    detail: `<b>General Purpose RAM (1024 bytes)</b><br><br>Pages 4-7 of internal RAM. Used for music/sound state, extended game variables, animation counters, and miscellaneous scratch space. Page 6 contains controller polling mirrors ($06A0-$06A1).` },
+  { addr: '$2000-$2007', name: 'PPU Registers', size: '8 B', cls: 'c-ppu', fill: '30%',
+    detail: `<b>PPU Registers (8 bytes, mirrored to $3FFF)</b><br><br><span class="key">$2000</span> <span class="val">PPUCTRL — NMI enable, sprite size, BG addr</span><br><span class="key">$2001</span> <span class="val">PPUMASK — grayscale, show BG/sprites</span><br><span class="key">$2002</span> <span class="val">PPUSTATUS — vblank, sprite 0 hit</span><br><span class="key">$2003</span> <span class="val">OAMADDR — sprite RAM address</span><br><span class="key">$2005</span> <span class="val">PPUSCROLL — fine scroll position</span><br><span class="key">$2006</span> <span class="val">PPUADDR — VRAM address</span><br><span class="key">$2007</span> <span class="val">PPUDATA — VRAM data read/write</span><br><br>Punch-Out!! uses MMC2's automatic CHR bank switching triggered by specific tile fetches — this is how it renders the large opponent sprites without CPU intervention.` },
+  { addr: '$4000-$4017', name: 'APU & I/O Registers', size: '24 B', cls: 'c-apu', fill: '15%',
+    detail: `<b>APU & I/O (24 bytes)</b><br><br><span class="key">$4000-03</span> <span class="val">Pulse 1 channel (sq. wave)</span><br><span class="key">$4004-07</span> <span class="val">Pulse 2 channel</span><br><span class="key">$4008-0B</span> <span class="val">Triangle channel</span><br><span class="key">$400C-0F</span> <span class="val">Noise channel</span><br><span class="key">$4010-13</span> <span class="val">DMC (delta modulation) — used for crowd cheering</span><br><span class="key">$4014</span> <span class="val">OAM DMA — triggers sprite DMA from $02xx</span><br><span class="key">$4016-17</span> <span class="val">Controller ports 1 &amp; 2</span><br><br>The cheering sound effect at $00D210 in ROM is played through the DMC channel.` },
+  { addr: '$4020-$5FFF', name: 'Expansion ROM (unused)', size: '8 KB', cls: 'c-exp', fill: '50%',
+    detail: `<b>Expansion Area (8160 bytes)</b><br><br>Available for mapper-specific use. MMC2 does not use this region. Some other mappers (like MMC5) place extra RAM or registers here. In Punch-Out!!, this entire region is unmapped open bus.` },
+  { addr: '$6000-$7FFF', name: 'WRAM / Save RAM', size: '8 KB', cls: 'c-sram', fill: '100%',
+    detail: `<b>Work RAM / SRAM (8192 bytes)</b><br><br>Battery-backed save RAM on the cartridge. Punch-Out!! uses this for persistent storage between play sessions. This is where your win/loss record and progress through the circuits is saved. Not all NES carts have this — it requires an extra RAM chip and battery on the PCB.` },
+  { addr: '$8000-$9FFF', name: 'PRG-ROM Bank 0 (switchable)', size: '8 KB', cls: 'c-prg', fill: '100%',
+    detail: `<b>PRG-ROM Bank 0 — Switchable (8KB)</b><br><br>First switchable PRG bank. MMC2 divides the 128KB PRG-ROM into 8KB pages. This bank is swapped by writing to $A000-$AFFF. Contains opponent-specific code — the game loads different banks depending on which fighter you're facing:<br><br><span class="key">Bank 0</span> <span class="val">Glass Joe / Don Flamenco</span><br><span class="key">Bank 1</span> <span class="val">King Hippo</span><br><span class="key">Bank 2</span> <span class="val">Von Kaiser / Great Tiger</span><br><span class="key">Bank 3</span> <span class="val">Bald Bull / Mr. Sandman</span><br><span class="key">Bank 4</span> <span class="val">Soda Popinski / Super Macho Man</span><br><span class="key">Bank 5</span> <span class="val">Piston Honda / Mike Tyson</span>` },
+  { addr: '$A000-$BFFF', name: 'PRG-ROM Bank 1 (fixed)', size: '8 KB', cls: 'c-prg', fill: '100%',
+    detail: `<b>PRG-ROM Bank 1 (8KB)</b><br><br>Second PRG bank in MMC2's layout. Writing to $A000-$AFFF selects which 8KB page appears at $8000. This address range also contains the bank switch register itself — a dual-purpose region.` },
+  { addr: '$C000-$FFFF', name: 'PRG-ROM (fixed, last 16KB)', size: '16 KB', cls: 'c-prg', fill: '100%',
+    detail: `<b>PRG-ROM — Fixed Upper Bank (16KB)</b><br><br>Always mapped to the last 16KB of PRG-ROM. Contains the core game engine, NMI handler, reset code, and interrupt vectors:<br><br><span class="key">$FFFA-FB</span> <span class="val">NMI vector (vblank handler)</span><br><span class="key">$FFFC-FD</span> <span class="val">RESET vector (power-on entry)</span><br><span class="key">$FFFE-FF</span> <span class="val">IRQ/BRK vector</span><br><br>This bank contains the main game loop, rendering routines, and the password system. It is never swapped out.` },
+];
+
+const memLayout = document.getElementById('memLayout');
+const memDetail = document.getElementById('memDetail');
+
+cpuRegions.forEach((r, i) => {
+  const el = document.createElement('div');
+  el.className = `mem-region ${r.cls}`;
+  el.innerHTML = `
+    <div class="mem-addr">${r.addr}</div>
+    <div class="mem-bar" style="--fill:${r.fill}"><span>${r.name}</span></div>
+    <div class="mem-size">${r.size}</div>
+  `;
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.mem-region').forEach(m => m.classList.remove('selected'));
+    el.classList.add('selected');
+    memDetail.innerHTML = r.detail;
+  });
+  memLayout.appendChild(el);
+});
+
+// ===== ROM STRUCTURE =====
+const romBlocks = [
+  { offset: '0x00000-0x0000F', label: 'iNES Header', bytes: '16 B', cls: 'rc-header',
+    detail: 'iNES header: identifies PRG size (128KB / 8 banks), CHR size (128KB / 16 pages), mapper 9 (MMC2), vertical mirroring, battery-backed SRAM present.' },
+  { offset: '0x00010-0x01385', label: 'Glass Joe Data', bytes: '~5 KB', cls: 'rc-opponent',
+    detail: 'Glass Joe (Minor Circuit): Stamina at $132C, strength at $1335, mug shot pointer at $1353, countdown stat at $135C, clock speed at $1360. The easiest opponent — his patterns are simple and predictable.' },
+  { offset: '0x014D3-0x01592', label: 'Don Flamenco Data', bytes: '~192 B', cls: 'rc-opponent',
+    detail: 'Don Flamenco — two entries: Major Circuit ($14D3-$1532) and World Circuit ($1533-$1592). His World Circuit version has higher stamina and faster patterns. Famous for being counter-punch-only in Major Circuit.' },
+  { offset: '0x02C5E-0x02CBD', label: 'King Hippo Data', bytes: '~96 B', cls: 'rc-opponent',
+    detail: 'King Hippo (Major Circuit + AWC): Stamina at $2C64, strength at $2C6D. Once knocked down, he cannot get back up — the only opponent with this property. His mouth-open tell is the key vulnerability.' },
+  { offset: '0x053D9-0x05438', label: 'Great Tiger Data', bytes: '~96 B', cls: 'rc-opponent',
+    detail: 'Great Tiger (Major Circuit + AWC): Countdown stat at $540F. Known for his Tiger Punch — a spinning attack that circles the ring. Blocking all hits earns a star.' },
+  { offset: '0x07887-0x079A6', label: 'Bald Bull Data', bytes: '~288 B', cls: 'rc-opponent',
+    detail: 'Bald Bull — three entries: Demo play ($7887-$78E6), Major Circuit ($78E7-$7946), World Circuit ($7947-$79A6). His Bull Charge can only be stopped with a perfectly timed gut punch.' },
+  { offset: '0x09A5C-0x09ABB', label: 'Soda Popinski Data', bytes: '~96 B', cls: 'rc-opponent',
+    detail: 'Soda Popinski (World Circuit): Stamina at $9A62, strength at $9A6B. The insta-knockdown flag at RAM $00CB is triggered when Mac hits him in the gut before an uppercut.' },
+  { offset: '0x0B819-0x0B878', label: 'Mike Tyson Data', bytes: '~96 B', cls: 'rc-opponent',
+    detail: 'Mike Tyson (Dream Fight): Stamina at $B81F. The final boss — his first 90 seconds feature one-hit knockdown uppercuts. Opponent Body value is 05, Matchup value is $40.' },
+  { offset: '0x0BAE8-0x0BBA7', label: 'Piston Honda Data', bytes: '~192 B', cls: 'rc-opponent',
+    detail: 'Piston Honda — two entries: World Circuit ($BAE8-$BB47) and Minor Circuit ($BB48-$BBA7). His Piston Rush requires precise timing to counter.' },
+  { offset: '0x0D210-0x0DD0F', label: 'Cheering Sound', bytes: '~2.75 KB', cls: 'rc-sound',
+    detail: 'DMC sample data for the crowd cheering sound effect. Played through the NES delta modulation channel. This is raw 1-bit delta-encoded audio at ~4kHz.' },
+  { offset: '0x0EDB2-0x0EDED', label: 'Password Data', bytes: '~60 B', cls: 'rc-password',
+    detail: 'Password table: Busy Signal passwords ($EDB2-$EDCF), Another World Circuit ($EDD0-$EDD8), Credits ($EDD9-$EDE3), Dream Fight ($EDE4-$EDED). The famous 007 373 5963 password reaches Mike Tyson directly.' },
+  { offset: '0x0F111-0x0F11A', label: 'Password Encryption', bytes: '10 B', cls: 'rc-password',
+    detail: 'Password encryption key — a 10-byte XOR table used to encode/decode the password system. Changing these bytes alters all valid passwords.' },
+  { offset: '0x1107E-0x1194B', label: 'Music / Song Data', bytes: '~2.25 KB', cls: 'rc-music',
+    detail: 'All music data: song pointers, melody/harmony/bass/drum tracks for Look Sharp (intro, main, tag), Glass Joe intro, Don Flamenco intro, King Hippo intro, and more. Each track stores note sequences for the NES APU channels.' },
+  { offset: '0x12CE3-0x12D0B', label: 'Character Profiles', bytes: '~40 B', cls: 'rc-profile',
+    detail: 'Fighter profile text data — names, cities, countries, ages, weights. Glass Joe example: name at $12CE3-$12CEB, city at $12CF0-$12CF5, country at $12CF9-$12CFE, age at $12D03-$12D04, weight at $12D09-$12D0B.' },
+  { offset: '0x180E1-0x1811A', label: 'Opponent Table', bytes: '58 B', cls: 'rc-table',
+    detail: 'Opponent lookup table (CPU $A0D1): 2 bytes per match. First byte selects Opponent Body / ROM bank (0-5), second byte selects Matchup variant (0x00-0x40). Match Number × 2 indexes into this table.' },
+  { offset: '0x1819D-0x181B9', label: 'Opponent Rank Table', bytes: '29 B', cls: 'rc-table',
+    detail: 'Rank/circuit table (CPU $A18D): 1 byte per match. Lower nibble = rank number (0=champion), upper nibble = circuit (0=Dream, 1=World, 2=Major, 3=Minor, 4=Another World Circuit).' },
+  { offset: '0x19926-0x19945', label: 'Palette Data', bytes: '32 B', cls: 'rc-palette',
+    detail: 'NES palette entries for the post-fight stat screen. The NES has 64 possible colors — this table selects 32 of them for background and sprite palettes in that specific screen.' },
+  { offset: '0x20010-0x40010', label: 'CHR Graphics (all tiles)', bytes: '128 KB', cls: 'rc-gfx',
+    detail: 'All tile graphics: 16 CHR-ROM pages × 8KB each = 128KB. Contains 8192 tiles total (16 bytes per 8×8 tile). This stores every sprite and background tile — fighters, ring, text, menus. MMC2 auto-switches CHR banks when the PPU fetches specific tiles, enabling the large opponent sprites.' },
+];
+
+const romStructure = document.getElementById('romStructure');
+const romDetail = document.getElementById('romDetail');
+
+romBlocks.forEach(b => {
+  const el = document.createElement('div');
+  el.className = `rom-block ${b.cls}`;
+  el.innerHTML = `
+    <div class="rom-offset">${b.offset}</div>
+    <div class="rom-label"><span>${b.label}</span></div>
+    <div class="rom-bytes">${b.bytes}</div>
+  `;
+  el.addEventListener('click', () => {
+    romDetail.innerHTML = `<h3>${b.label.toUpperCase()}</h3>${b.detail}`;
+  });
+  romStructure.appendChild(el);
+});
+
+// ===== FIGHTERS =====
+const fighters = [
+  { name: 'Glass Joe', circuit: 'Minor Circuit #1', color: '#55dd55', rom: '0x001326-0x001385',
+    stamina: '0x00132C', strength: '0x001335', mugshot: '0x001353', countdown: '0x00135C', clock: '0x001360',
+    body: '00', matchup: '00', rank: '$33', info: 'Record: 1-99. From Paris, France. The easiest opponent — his only win is against Nick Bruiser\'s brother. Patterns are simple and telegraphed. TAS can KO him in under 42 seconds.' },
+  { name: 'Von Kaiser', circuit: 'Minor Circuit #2', color: '#88aaff', rom: '0x02xxx (Bank 2)',
+    body: '02', matchup: '00', rank: '$32', info: 'From Berlin, Germany. A military-themed fighter. RAM $004C controls his weakness to star uppercuts — forcing it to 0 removes his vulnerability entirely.' },
+  { name: 'Piston Honda', circuit: 'Minor Circuit #3 / World Circuit', color: '#ff8844', rom: '0x0BAE8-0x0BBA7',
+    stamina: '0x00BAEE / 0x00BB4E', strength: '0x00BAF7', body: '05', matchup: '00/30',
+    info: 'From Tokyo, Japan. Two appearances with different data blocks. His Piston Rush attack requires precise dodge timing. World Circuit version is significantly more aggressive.' },
+  { name: 'Don Flamenco', circuit: 'Major Circuit #1 / World Circuit', color: '#ff4466', rom: '0x0014D3-0x001592',
+    stamina: '0x0014D9 / 0x001539', body: '00', matchup: '10/20',
+    info: 'From Madrid, Spain. Major Circuit version is counter-punch only — he only attacks after Mac throws a punch. World Circuit version initiates attacks. Two separate ROM data blocks at $14D3 and $1533.' },
+  { name: 'King Hippo', circuit: 'Major Circuit #2', color: '#ffcc00', rom: '0x002C5E-0x002CBD',
+    stamina: '0x002C64', strength: '0x002C6D', mugshot: '0x002C8B', countdown: '0x002C94',
+    body: '01', matchup: '00', info: 'From Hippo Island, South Pacific. Once knocked down, he NEVER gets back up — unique among all fighters. Hit him when his mouth is open, then pummel his stomach when his trunks drop.' },
+  { name: 'Great Tiger', circuit: 'Major Circuit #3', color: '#aa55ff', rom: '0x0053D9-0x005438',
+    countdown: '0x00540F', body: '02', matchup: '10',
+    info: 'From Bombay, India. His Tiger Punch spins around the ring — block all hits to earn a star. His jewel flashes before uppercuts. Tiger Punch pattern is stored in the bank 2 code section.' },
+  { name: 'Bald Bull', circuit: 'Major / World Circuit', color: '#ff2222', rom: '0x007887-0x0079A6',
+    stamina: '0x0078ED / 0x00794D', strength: '0x0078F6 / 0x007956',
+    body: '03', matchup: '00/10/20/30', info: 'From Istanbul, Turkey. Three ROM entries (demo, Major, World). His Bull Charge can only be countered with a perfectly timed body blow — one of the game\'s most iconic moments. Demo play data at $7887 drives the title screen fight.' },
+  { name: 'Soda Popinski', circuit: 'World Circuit', color: '#00ccff', rom: '0x009A5C-0x009ABB',
+    stamina: '0x009A62', strength: '0x009A6B', mugshot: '0x009A89', countdown: '0x009A92',
+    body: '04', matchup: '10', info: 'From Moscow, USSR. RAM $00CB is the insta-knockdown flag — set to 1 when Mac lands a gut punch before Soda throws an uppercut. Originally named "Vodka Drunkenski" in the arcade version.' },
+  { name: 'Mr. Sandman', circuit: 'World Circuit', color: '#ddaa00', rom: '0x0xxxx (Bank 3)',
+    body: '03', matchup: '10', info: 'From Philadelphia, USA. Shares ROM bank 3 with Bald Bull. His Dreamland Express is a devastating three-uppercut combo. World Circuit gatekeeper before the Dream Fight.' },
+  { name: 'Super Macho Man', circuit: 'World Circuit Champion', color: '#ff55aa', rom: '0x0xxxx (Bank 4)',
+    body: '04', matchup: '30', info: 'From Hollywood, USA. Shares ROM bank 4 with Soda Popinski. His Super Spin Punch winds up visibly. The last opponent before Mike Tyson. Rank byte upper nibble: 1 (World Circuit), lower nibble: 0 (Champion).' },
+  { name: 'Mike Tyson', circuit: 'Dream Fight', color: '#ffffff', rom: '0x0B819-0x0B878',
+    stamina: '0x00B81F', body: '05', matchup: '40',
+    info: 'The Dream Fight. First 90 seconds: one-hit KO uppercuts (frame-perfect dodges required). Matchup value $40 is unique — no other fighter uses it. Password 007 373 5963 jumps directly to this fight. After Tyson\'s license expired, the game was re-released with "Mr. Dream" replacing him.' },
+];
+
+const fighterGrid = document.getElementById('fighterGrid');
+fighters.forEach(f => {
+  const card = document.createElement('div');
+  card.className = 'fighter-card';
+  card.style.setProperty('--fighter-color', f.color);
+
+  let statsHTML = '';
+  if (f.rom) statsHTML += `<div class="fighter-stat"><span class="label">ROM Data</span><span class="value">${f.rom}</span></div>`;
+  if (f.stamina) statsHTML += `<div class="fighter-stat"><span class="label">Stamina Addr</span><span class="value">${f.stamina}</span></div>`;
+  if (f.body !== undefined) statsHTML += `<div class="fighter-stat"><span class="label">Body/Bank ID</span><span class="value hex-inline">0x${f.body}</span></div>`;
+  if (f.matchup) statsHTML += `<div class="fighter-stat"><span class="label">Matchup Byte</span><span class="value hex-inline">0x${f.matchup}</span></div>`;
+
+  card.innerHTML = `
+    <div class="fighter-name">${f.name}</div>
+    <div class="fighter-circuit">${f.circuit}</div>
+    ${statsHTML}
+    <div class="fighter-detail">
+      ${f.strength ? `<div class="fighter-stat"><span class="label">Strength Addr</span><span class="value">${f.strength}</span></div>` : ''}
+      ${f.mugshot ? `<div class="fighter-stat"><span class="label">Mug Shot Ptr</span><span class="value">${f.mugshot}</span></div>` : ''}
+      ${f.countdown ? `<div class="fighter-stat"><span class="label">Countdown Stat</span><span class="value">${f.countdown}</span></div>` : ''}
+      ${f.clock ? `<div class="fighter-stat"><span class="label">Clock Speed</span><span class="value">${f.clock}</span></div>` : ''}
+      ${f.rank ? `<div class="fighter-stat"><span class="label">Rank Byte</span><span class="value hex-inline">${f.rank}</span></div>` : ''}
+      <div style="margin-top:10px;font-size:11px;color:var(--gray);line-height:1.6">${f.info}</div>
+    </div>
+  `;
+  card.addEventListener('click', () => card.classList.toggle('expanded'));
+  fighterGrid.appendChild(card);
+});
+
+// ===== RAM VIEWER =====
+const ramMap = {
+  0x0000: 'Fight init (1=started)', 0x0001: 'Opponent ID (0-99)', 0x0002: 'Opp Type ID',
+  0x0003: 'Opp behavior ID', 0x0004: 'Fight state ($FF=fight, $01=cutscene)', 0x0005: 'Opponent down flag',
+  0x0006: 'Current round', 0x0008: 'Fight ID', 0x0009: 'Fighter ID', 0x000A: '# Mac losses',
+  0x0011: 'Mac X position', 0x0014: 'Set fans/mario/menus', 0x0016: 'Draw Mac flag',
+  0x0017: 'Draw Opponent flag', 0x0018: 'RNG (updates per frame)', 0x0019: 'Button pressed ID',
+  0x001E: '0-255 counter', 0x001F: 'Idle timer',
+  0x0030: 'Opp fight pattern init', 0x0031: 'Opp pattern flag (14=passive)',
+  0x0038: 'Opp pattern initializer', 0x0039: 'Opp action timer (0=act)',
+  0x003A: 'Opp next action ID', 0x003B: 'Global enemy action set',
+  0x004C: 'Kaiser star weakness', 0x00CB: 'Soda insta-KD flag',
+  0x00D0: 'Controller 1 input', 0x00D1: 'Controller 2 input',
+  0x00D2: 'Arrow keys poll', 0x00D4: 'A button poll', 0x00D6: 'B button poll',
+  0x00D8: 'Start button poll', 0x00DA: 'Select button poll',
+  0x0300: 'Clock active flag', 0x0301: 'Clock stop flag', 0x0302: 'Clock minutes',
+  0x0304: 'Clock tenths', 0x0305: 'Clock seconds',
+  0x0306: 'Partial seconds', 0x0307: 'Partial seconds',
+  0x0308: 'Round state (4/5)', 0x030C: 'Next minute', 0x030D: 'Next tenth', 0x030E: 'Next second',
+  0x0323: 'Hearts (tens)', 0x0324: 'Hearts (ones)', 0x0342: 'Star punches',
+  0x0391: 'Mac Health', 0x0392: 'Mac Health (mirror)', 0x0393: 'Mac Health (mirror)',
+  0x0398: 'Opp Health', 0x0399: 'Opp Health (mirror)', 0x039A: 'Opp Health (mirror)',
+};
+
+const ramPageSelector = document.getElementById('ramPageSelector');
+const ramGrid = document.getElementById('ramGrid');
+const ramTooltip = document.getElementById('ramTooltip');
+
+let currentPage = 0;
+
+for (let p = 0; p < 8; p++) {
+  const btn = document.createElement('button');
+  btn.className = `ram-page-btn ${p === 0 ? 'active' : ''}`;
+  btn.textContent = `$${(p * 256).toString(16).toUpperCase().padStart(4, '0')}`;
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.ram-page-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPage = p;
+    renderRAMGrid(p);
+  });
+  ramPageSelector.appendChild(btn);
+}
+
+function renderRAMGrid(page) {
+  ramGrid.innerHTML = '';
+  // Header row
+  const corner = document.createElement('div');
+  corner.className = 'ram-header-cell';
+  corner.textContent = '';
+  ramGrid.appendChild(corner);
+  for (let c = 0; c < 16; c++) {
+    const h = document.createElement('div');
+    h.className = 'ram-header-cell';
+    h.textContent = c.toString(16).toUpperCase();
+    ramGrid.appendChild(h);
+  }
+  // Data rows
+  for (let r = 0; r < 16; r++) {
+    const rowLabel = document.createElement('div');
+    rowLabel.className = 'ram-row-label';
+    const baseAddr = page * 256 + r * 16;
+    rowLabel.textContent = '$' + baseAddr.toString(16).toUpperCase().padStart(4, '0');
+    ramGrid.appendChild(rowLabel);
+
+    for (let c = 0; c < 16; c++) {
+      const addr = page * 256 + r * 16 + c;
+      const cell = document.createElement('div');
+      cell.className = 'ram-cell';
+      cell.textContent = '--';
+
+      if (ramMap[addr]) {
+        cell.classList.add('mapped');
+        cell.textContent = addr.toString(16).toUpperCase().padStart(2, '0').slice(-2);
+      }
+
+      cell.addEventListener('click', () => {
+        const addrStr = '$' + addr.toString(16).toUpperCase().padStart(4, '0');
+        const desc = ramMap[addr] || 'Unmapped / unknown function';
+        ramTooltip.innerHTML = `<span class="addr">${addrStr}</span> &mdash; <span class="desc">${desc}</span>`;
+      });
+
+      cell.addEventListener('mouseenter', () => {
+        const addrStr = '$' + addr.toString(16).toUpperCase().padStart(4, '0');
+        const desc = ramMap[addr] || 'Unmapped / unknown function';
+        ramTooltip.innerHTML = `<span class="addr">${addrStr}</span> &mdash; <span class="desc">${desc}</span>`;
+      });
+
+      ramGrid.appendChild(cell);
+    }
+  }
+}
+
+renderRAMGrid(0);
+
+// ===== CARTRIDGE =====
+const specs = [
+  { label: 'PRG-ROM', value: '128 KB', note: '8 × 16KB banks' },
+  { label: 'CHR-ROM', value: '128 KB', note: '16 × 8KB pages, 8192 tiles' },
+  { label: 'Mapper', value: '#9 (MMC2)', note: 'Only game to use it' },
+  { label: 'WRAM', value: '8 KB', note: 'Battery-backed SRAM' },
+  { label: 'Mirroring', value: 'Vertical', note: 'Horizontal scrolling' },
+  { label: 'Total ROM', value: '256 KB', note: 'Large for 1987 NES' },
+  { label: 'CPU', value: '2A03', note: '6502 @ 1.79 MHz (NTSC)' },
+  { label: 'PPU', value: '2C02', note: '256×240, 64 sprites, 52 colors' },
+];
+
+const mapperSpecs = [
+  { label: 'PRG Banks', value: '8KB swap', note: '$8000-$9FFF switchable' },
+  { label: 'CHR Banks', value: '4KB auto', note: 'Latch-triggered switching' },
+  { label: 'Latch Tiles', value: '$FD / $FE', note: 'PPU fetches trigger swap' },
+  { label: 'Fixed Bank', value: '$C000-$FFFF', note: 'Last 16KB always mapped' },
+  { label: 'Unique Feature', value: 'Auto CHR', note: 'No CPU overhead for CHR' },
+  { label: 'Register', value: '$A000', note: 'PRG bank select' },
+];
+
+const vectors = [
+  { label: 'NMI Vector', value: '$FFFA-$FFFB', note: 'Vblank interrupt handler' },
+  { label: 'RESET Vector', value: '$FFFC-$FFFD', note: 'Power-on entry point' },
+  { label: 'IRQ/BRK', value: '$FFFE-$FFFF', note: 'Hardware interrupt' },
+];
+
+function renderArchGrid(data, containerId) {
+  const container = document.getElementById(containerId);
+  data.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'arch-item';
+    el.innerHTML = `<div class="label">${d.label}</div><div class="value">${d.value}</div><div class="note">${d.note}</div>`;
+    container.appendChild(el);
+  });
+}
+
+renderArchGrid(specs, 'cartSpecs');
+renderArchGrid(mapperSpecs, 'mapperInfo');
+renderArchGrid(vectors, 'vectorInfo');
+</script>
+</body>
+</html>

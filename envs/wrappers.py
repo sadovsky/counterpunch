@@ -84,8 +84,10 @@ class PunchOutRewardWrapper(gym.Wrapper):
         knockdowns_taken = info.get("knockdowns_taken", self._prev_knockdowns_taken)
         punches_landed   = info.get("punches_landed", self._prev_punches_landed)
 
-        opponent_dmg     = self._prev_health_com - health_com
-        player_dmg       = self._prev_health_mac - health_mac
+        # Clamp to [0, ...): health resets after knockdowns should not generate
+        # reward or penalty — those are accounted for by knockdown_dealt/taken.
+        opponent_dmg     = max(self._prev_health_com - health_com, 0)
+        player_dmg       = max(self._prev_health_mac - health_mac, 0)
         heart_delta      = heart - self._prev_heart
         score_delta      = score - self._prev_score
         star_delta       = stars - self._prev_stars
@@ -135,43 +137,58 @@ class PunchOutRewardWrapper(gym.Wrapper):
 
 
 class KnockdownRecovery(gym.Wrapper):
-    """Pulses START when the fight clock is inactive.
+    """Handles knockdowns and between-round/fight "press start" screens.
 
-    Detects knockdowns and between-round/post-KO pauses via the clock-active
-    flag (RAM 768). Pulses START (3 frames on, 12 frames off) rather than
-    holding it continuously — the NES only registers one press event per
-    button-hold, so pulsing allows multiple transition screens to advance.
+    Two distinct cases:
+    - clock==0, fight==0xFF: Mac knocked down mid-fight. Pulse START+A fast
+      (3 on / 12 off) to fill the get-up meter.
+    - clock==1, fight!=0xFF: "Press start" screen between rounds or fights.
+      Pulse START slowly (3 on / 57 off, ~1 press/sec) to advance the screen
+      without accidentally pausing an active fight.
     """
 
-    ADDR_CLOCK = 768  # 0x0300 — 1 when fight clock is running
-    PULSE_ON   = 3    # frames to hold START
-    PULSE_CYCLE = 15  # total cycle length (on + off)
+    ADDR_CLOCK       = 768   # 0x0300 — 1 when fight clock is running
+    ADDR_FIGHT_STATE = 4     # 0x0004 — 0xFF=active fight, 0x01=between rounds
+    FIGHT_ACTIVE     = 0xFF
 
-    _START    = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)
-    _START_A  = np.array([0, 0, 0, 1, 0, 0, 0, 0, 1], dtype=np.int8)  # START+A
-    _NOOP     = np.zeros(9, dtype=np.int8)
+    # Knockdown recovery: fast multi-frame pulse to fill the get-up meter.
+    FAST_PULSE_ON    = 3
+    FAST_CYCLE       = 15
+    # Press-start screens: single-frame press on a slow cycle.
+    # Single frame avoids the pause→unpause→pause trap that 3 held frames cause.
+    # Continuous _frame counter (not reset on fight_state transition) means the
+    # first press after transition lands at a random phase, letting auto-advancing
+    # animations play out before we accidentally pause them.
+    SLOW_PULSE_ON    = 4   # hold 4 frames to clear NES debounce (matches make_state.py)
+    SLOW_CYCLE       = 60
+
+    _START_A = np.array([0, 0, 0, 1, 0, 0, 0, 0, 1], dtype=np.int8)  # knockdown recovery
+    _START   = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=np.int8)  # press-start screens
+    _NOOP    = np.zeros(9, dtype=np.int8)
 
     def __init__(self, env):
         super().__init__(env)
-        self._inactive_frames = 0
+        self._frame = 0
 
     def reset(self, **kwargs):
-        self._inactive_frames = 0
+        self._frame = 0
         return self.env.reset(**kwargs)
 
     def step(self, action):
         ram = self.env.unwrapped.get_ram()
         clock_active = int(ram[self.ADDR_CLOCK]) == 1
+        fight_state  = int(ram[self.ADDR_FIGHT_STATE])
 
-        if not clock_active:
-            # Pulse START+A every PULSE_CYCLE frames — some post-fight
-            # screens respond to A, others to START; pressing both covers all
-            phase = self._inactive_frames % self.PULSE_CYCLE
-            action = self._START_A if phase < self.PULSE_ON else self._NOOP
-            self._inactive_frames += 1
-        else:
-            self._inactive_frames = 0
+        if not clock_active and fight_state == self.FIGHT_ACTIVE:
+            # Mac knocked down mid-fight — fast START+A pulse
+            phase = self._frame % self.FAST_CYCLE
+            action = self._START_A if phase < self.FAST_PULSE_ON else self._NOOP
+        elif fight_state != self.FIGHT_ACTIVE:
+            # Between rounds, post-KO, or press-start screen — slow single-frame START pulse.
+            phase = self._frame % self.SLOW_CYCLE
+            action = self._START if phase < self.SLOW_PULSE_ON else self._NOOP
 
+        self._frame += 1
         return self.env.step(action)
 
 

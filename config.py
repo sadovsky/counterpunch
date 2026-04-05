@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 @dataclass
 class EnvConfig:
     game: str = "PunchOut-Nes-v0"
-    state: str = "Match2"
-    generalization_states: list = field(default_factory=lambda: ["Match1"])
-    generalization_prob: float = 0.2
+    state: str = "Match1"
+    generalization_states: list = field(default_factory=lambda: ["Match2"])
+    generalization_prob: float = 0.33
     frame_skip: int = 4
     sticky_prob: float = 0.1
-    eval_sticky_prob: float = 0.0
+    eval_sticky_prob: float = 0.05
     grayscale: bool = True
     resize: tuple[int, int] = (84, 84)
-    frame_stack: int = 4
+    frame_stack: int = 8
     n_envs: int = 8
     max_episode_steps: int = 13500      # ~9 min at 60fps / frame_skip=4
     eval_max_episode_steps: int = 4500  # ~3 min — keeps eval from blocking training
@@ -32,14 +32,14 @@ class RewardConfig:
     star_used: float = 0.3
     star_hit: float = 3.0
     heart_loss: float = 0.0
-    noop_penalty: float = -0.005
+    noop_penalty: float = -0.02
     score_weight: float = 0.0
 
 
 @dataclass
 class PPOConfig:
-    learning_rate: float = 2.5e-4
-    n_steps: int = 128
+    learning_rate: float = 2e-4
+    n_steps: int = 256
     batch_size: int = 256
     n_epochs: int = 4
     gamma: float = 0.99
@@ -52,7 +52,7 @@ class PPOConfig:
 
 @dataclass
 class TrainConfig:
-    total_timesteps: int = 10_000_000
+    total_timesteps: int = 15_000_000
     eval_freq: int = 50_000
     n_eval_episodes: int = 5
     save_freq: int = 100_000
